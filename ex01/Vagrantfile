@@ -1,0 +1,36 @@
+Vagrant.configure("2") do |config|
+
+  servers=[
+    {
+      :hostname => "malangloS",
+      :box => "hashicorp/bionic64",
+      :ip => "192.168.56.110",
+      :ssh_port => "8082",
+    }
+  ]
+
+  servers.each do |machine|
+    config.vm.define machine[:hostname] do |node|
+      node.vm.box = machine[:box]
+      node.vm.hostname = machine[:hostname]
+      node.vm.network :private_network, ip: machine[:ip]
+      node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"
+
+      node.vm.provider :virtualbox do |vb|
+        vb.customize ["modifyvm", :id, "--memory", 1024]
+        vb.customize ["modifyvm", :id, "--cpus", 2]
+      end
+
+      # Provisioning shell pour installer k3s
+      node.vm.provision "shell", inline: <<-SHELL
+        curl -sfL https://get.k3s.io | sh -
+      SHELL
+
+      # Provisioning shell pour déployer tes apps
+      node.vm.provision "shell", inline: <<-SHELL
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        kubectl apply -f /vagrant/apps.yaml
+      SHELL
+    end
+  end
+end
