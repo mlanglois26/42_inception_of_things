@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/mlanglois26/42_inception_of_things.git
     targetRevision: main
-    path: dev
+    path: ex02/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
