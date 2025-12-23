@@ -1,0 +1,50 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+
+  instances = [
+    {
+      hostname: "malangloS",
+      box: "hashicorp/bionic64",
+      ip: "192.168.56.110",
+      ssh_port: 8080,
+      role: "server"
+    },
+    {
+      hostname: "malangloSW",
+      box: "hashicorp/bionic64",
+      ip: "192.168.56.111",
+      ssh_port: 8081,
+      role: "agent"
+    }
+  ]
+
+  instances.each do |machine|
+    config.vm.define machine[:hostname] do |node|
+      node.vm.box = machine[:box]
+      node.vm.hostname = machine[:hostname]
+      node.vm.network :private_network, ip: machine[:ip]
+      node.vm.network "forwarded_port",
+        guest: 22,
+        host: machine[:ssh_port],
+        id: "ssh"
+
+      node.vm.provider :virtualbox do |vb|
+        vb.memory = 1024
+        vb.cpus = 2
+      end
+
+      if machine[:role] == "server"
+        node.vm.provision "shell", path: "scripts/server.sh"
+      else
+        node.vm.provision "shell", path: "scripts/agent.sh"
+      end
+    end
+  end
+end
+
