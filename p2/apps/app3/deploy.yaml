@@ -14,6 +14,13 @@ spec:
     spec:
       containers:
       - name: app3
-        image: nginx:alpine
+        image: nginx:latest
         ports:
         - containerPort: 80
+        volumeMounts:
+        - name: html-3
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html-3
+        configMap:
+          name: app3-index
