@@ -17,10 +17,10 @@ until kubectl get nodes &>/dev/null; do
   sleep 2
 done
 
-#
-kubectl create configmap app1-index --from-file /apps/app1/index.html
-kubectl create configmap app2-index --from-file /apps/app2/index.html
-kubectl create configmap app3-index --from-file /apps/app3/index.html
+# Créer les ConfigMaps avant les déploiements
+kubectl create configmap app1-index --from-file=/apps/app1/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
+kubectl create configmap app2-index --from-file=/apps/app2/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
+kubectl create configmap app3-index --from-file=/apps/app3/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
 
 # Déployer les applications
 kubectl apply -f /apps/app1/deploy.yaml
@@ -31,3 +31,6 @@ kubectl apply -f /apps/app2/service.yaml
 
 kubectl apply -f /apps/app3/deploy.yaml
 kubectl apply -f /apps/app3/service.yaml
+
+# Déployer l'ingress
+kubectl apply -f /ingress/ingress.yaml
