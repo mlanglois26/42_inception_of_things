@@ -25,3 +25,5 @@ Dans la vm agent, on execute le script agent.sh
 -> on démarre k3s en lui passant l'IP de la vm server et le token du master node
 
 Le worker node qui existe dans la vm agent est donc bien connecté au master node qui se trouve dans la vm server 
+
+ajouter le bon chemin pour le kubeconfig
