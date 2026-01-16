@@ -8,4 +8,19 @@ spec:
   ports:
     - port: 80
       targetPort: 80
-  type: ClusterIP
+      nodePort: 30082
+  type: NodePort
+
+# ---
+# # Service interne
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: app3-clusterip
+# spec:
+#   selector:
+#     app: app3
+#   ports:
+#     - port: 80 # le port “virtuel” du service à l’intérieur du cluster
+#       targetPort: 80 # le port du pod que le service expose
+#   type: ClusterIP

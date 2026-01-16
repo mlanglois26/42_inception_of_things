@@ -1,0 +1,6 @@
+<html>
+  <body>
+    <h1>Coucou App 2</h1>
+    <h2>Hello from pod: ${HOSTNAME}</h2>
+  </body>
+</html>

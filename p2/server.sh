@@ -19,10 +19,9 @@ done
 
 # Créer les ConfigMaps avant les déploiements
 kubectl create configmap app1-index --from-file=/apps/app1/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
-kubectl create configmap app2-index --from-file=/apps/app2/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
 kubectl create configmap app3-index --from-file=/apps/app3/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
 
-# Déployer les applications
+# Déployer les pods et les services
 kubectl apply -f /apps/app1/deploy.yaml
 kubectl apply -f /apps/app1/service.yaml
 

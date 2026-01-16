@@ -102,3 +102,11 @@ backend:
       number: 80
 
 Ingress → app1-service:80
+
+
+désactiver le ingress controller par defaut de k3s car pas assez permissif pour ce que je veux faire
+
+sudo kubectl get svc -n kube-system
+sudo kubectl get pods -n kube-system | grep traefik
+depuis la vm curl -H "Host: app3.com" http://localhost
+dpuis la vm du projet : curl -H "Host: app6.com" http://192.168.56.110 ou sur browser web spécifier nodePort sans host
