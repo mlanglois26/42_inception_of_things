@@ -1,4 +1,7 @@
-Le but du 2e exo est de créer une vm dans laquelle on lancera 3 apps qui s'executent depuis 3 cluster différents
+Le but du 2e exo est de créer une vm, donc un node dans laquel on lancera 3 apps différentes avec 
+- un pod pour app1
+- trois pods pour app2
+- un pod pour app1
 
 Vagrantfile
 
@@ -75,3 +78,27 @@ c'est la couche d'accès http externe
 -> type d'objet = ingress
 -> ingress controller recoit une requete vers un host, et un path, il regarde la rule correspondante
 -> la requete est transmise au service via le name
+
+un service expose des pods à l'échelle du cluster
+l'ingress rend des services accessibles depuis l'extérieur du cluster via http/s
+
+-> le target port c'est le port sur lequel l'application écoute dans le pod
+-> port c'est le port exposé par le service lui même
+
+ports:
+- port: 80        # ce que le client utilise
+  targetPort: 3000 # ce que le pod écoute
+
+Client interne
+   ↓
+app1-service:80   (port)
+   ↓
+Pod:3000          (targetPort)
+
+backend:
+  service:
+    name: app1-service
+    port:
+      number: 80
+
+Ingress → app1-service:80
