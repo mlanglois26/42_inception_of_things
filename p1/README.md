@@ -1,29 +1,100 @@
-Le but du premier exo est de lancer deux VMs. 
--> dans la vm server, on installe kubernetes et on y place de master node / control plan
--> dans la vm agent, on installe kubernetes et on y place un worker node qui sera rattaché au master node de la vm server
+# K3S avec Vagrant
 
-La cli pour run le Vagrantfile est vagrant up
--> ça va créer les deux vms en s'appuyant sur leurs configs
+Le but du premier exercice est de lancer **deux VMs** :  
 
-Dans la vm server, on execute le script server.sh
--> avec cette cli : curl -sfL https://get.k3s.io | sh -
--> on installe kubernetes (k3s qui est une version légère de kubernetes)
--> on démarre le service k3s
+- Dans la **VM server**, on installe Kubernetes et on y place le **master node / control plane**.  
+- Dans la **VM worker**, on installe Kubernetes et on y place un **worker node** qui sera rattaché au master node de la VM server.
 
-Lors du démarrage de k3s, un  node token est généré. Il est stocké dans /var/lib/rancher/k3s/server/node-token
--> donc dans la boucle while du script on attend que le token soit généré
--> on va ensuite copié ce token dans /vagrant/token car c'est un dossier partagé Vagrant. Il est monté automatiquement entre la vm et la machine hôte
--> on /vagrant/token lisible par tout le monde et on donne les droits d'écriture à root
+---
 
-Le token permet à un node agent de rejoindre le cluster
-Le but est donc de rendre le token accessible pour permettre au worker node de rejoindre le cluster du master node.
+## Le workflow
 
-Dans la vm agent, on execute le script agent.sh
--> on attend que le token généré depuis la vm server par le master node soit copié dans le dossier vagrant accessible par tous
--> on curl -sfL https://get.k3s.io | K3S_URL=https://${SERVER_IP}:6443 K3S_TOKEN=${TOKEN} sh -
--> donc on installe kubernetes 
--> on démarre k3s en lui passant l'IP de la vm server et le token du master node
+1. Le **Vagrantfile** configure et provisionne les VMs.  
+2. Il appelle les scripts responsables des deux setups Kubernetes.
 
-Le worker node qui existe dans la vm agent est donc bien connecté au master node qui se trouve dans la vm server 
+---
 
-ajouter le bon chemin pour le kubeconfig
+## Les principales commandes Vagrant
+
+(A lancer au niveau du Vagrantfile) :
+
+```bash
+vagrant --help          # Affiche l'aide de Vagrant
+vagrant up              # Lance et provisionne les VMs définies dans le Vagrantfile
+vagrant ssh 'name'      # Se connecter à la VM spécifiée
+vagrant provision       # Re-provisionne la VM après modification d'un script
+```
+
+---
+
+## Explications des scripts
+
+<details>
+<summary><u>server.sh</u></summary>
+<br>
+Dans la VM **server**, on exécute le script `server.sh` :
+
+- `curl -sfL https://get.k3s.io | sh -`  
+- On installe **Kubernetes (k3s)**, qui est une version légère de Kubernetes.  
+- On démarre le service **k3s**.
+
+Lors du démarrage de k3s, un **node token** est généré. Il est stocké dans : /var/lib/rancher/k3s/server/node-token
+
+
+Le script fait ensuite :  
+- Attend dans une boucle `while` que le token soit généré.  
+- Copie le token dans `/vagrant/token` (dossier partagé Vagrant, monté automatiquement entre la VM et la machine hôte).  
+- Rend `/vagrant/token` lisible par tous et donne les droits d’écriture à root.
+
+**Rôle du token :**  
+Le token permet à un **worker node** de rejoindre le cluster.  
+Le but est donc de rendre le token accessible pour permettre au worker node de se connecter au master node.
+
+</details>
+
+<details>
+<summary><u>worker.sh</u></summary>
+<br>
+Dans la VM **worker**, on exécute le script `worker.sh` :
+
+- On attend que le **token** généré depuis la VM server par le master node soit copié dans le dossier Vagrant accessible par tous.  
+- On exécute :  
+```bash
+curl -sfL https://get.k3s.io | K3S_URL=https://${SERVER_IP}:6443 K3S_TOKEN=${TOKEN} sh -
+```
+- On installe Kubernetes (k3s).
+- On démarre k3s en lui passant l'IP de la VM server et le token du master node.
+
+Ainsi, le worker node dans la VM worker est bien connecté au master node dans la VM server.
+
+</details>
+
+---
+
+## Récap
+
+![Archi Cluster](../images/archi-1.png)
+
+![Server Worker](../images/k3s-server-worker.png)
+
+Les pods applicatifs sont censés être gérés dans le worker node
+
+
+
+
+
+
+
+
+
+
+
+<br>
+<br>
+<br>
+
+
+
+
+
+ajouter le bon chemin pour le kubeconfig pour pouvoir utiliser kubectl ?

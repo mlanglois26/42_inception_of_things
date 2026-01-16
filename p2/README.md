@@ -1,7 +1,63 @@
-Le but du 2e exo est de créer une vm, donc un node dans laquel on lancera 3 apps différentes avec 
+# K3S avec Vagrant Again
+
+Contrairement à l'exo précedent, on ne créer qu'une seule vm. Tout sera donc géré depuis le master node.
+Avec K8s ça ne serait pas une bonne pratique mais K3s le permet.
+
+Le but du 2e exo est donc de créer une vm, donc un node dans laquel on lancera 3 apps différentes avec 
 - un pod pour app1
 - trois pods pour app2
-- un pod pour app1
+- un pod pour app3
+
+---
+
+## Architecture
+
+<details>
+  <summary>Schémas : architecture K3s d'un point de vue général</summary>
+  <br>
+  
+  Cluster -> Node -> Pods -> Containers
+  <br>
+
+  <table>
+    <tr>
+      <td><img src="../images/global.png" alt="global" width="800"/></td>
+      <td><img src="../images/node.png" alt="node" width="600"/></td>
+    </tr>
+  </table>
+</details>
+
+<br>
+
+<details>
+  <summary>Schémas : architecture infra de l'exo 2</summary>
+  <br>
+
+  <table>
+    <tr>
+      <td><img src="../images/archi-2.png" alt="archi-2" width="800"/></td>
+      <td><img src="../images/node-2.png" alt="node-2" width="800"/></td>
+    </tr>
+  </table>
+</details>
+
+<br>
+
+<details>
+  <summary>Schémas : architecture network de l'exo 2</summary>
+  <br>
+
+  <table>
+    <tr>
+      <td><img src="../images/archi-2.png" alt="archi-2" width="800"/></td>
+    </tr>
+  </table>
+</details>
+
+---
+
+## Explication du code
+
 
 Vagrantfile
 
@@ -110,3 +166,7 @@ sudo kubectl get svc -n kube-system
 sudo kubectl get pods -n kube-system | grep traefik
 depuis la vm curl -H "Host: app3.com" http://localhost
 dpuis la vm du projet : curl -H "Host: app6.com" http://192.168.56.110 ou sur browser web spécifier nodePort sans host
+
+
+
+
