@@ -10,6 +10,7 @@ explication générale k3s avec escalidraw
   
   Cluster -> Node -> Pods -> Containers
   
-  ![Logo du projet](Sans-titre-2025-09-11-0954.png)
-
+  ![global](global.png)
+  <br>
+  ![node](node.png)
 </details>
