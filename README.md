@@ -13,8 +13,8 @@ explication générale k3s avec escalidraw
 
   <table>
     <tr>
-      <td><img src="global.png" alt="global" width="300"/></td>
-      <td><img src="node.png" alt="node" width="300"/></td>
+      <td><img src="global.png" alt="global" width="800"/></td>
+      <td><img src="node.png" alt="node" width="600"/></td>
     </tr>
   </table>
 </details>
