@@ -6,11 +6,15 @@ explication générale k3s avec escalidraw
 
 <details>
   <summary>Schémas</summary>
-<br>
+  <br>
   
   Cluster -> Node -> Pods -> Containers
-  
-  ![global](global.png)
-  <br>
-  ![node](node.png)
+  <br><br>
+
+  <table>
+    <tr>
+      <td><img src="global.png" alt="global" width="300"/></td>
+      <td><img src="node.png" alt="node" width="300"/></td>
+    </tr>
+  </table>
 </details>
