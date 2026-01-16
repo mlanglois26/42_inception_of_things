@@ -7,8 +7,9 @@ explication générale k3s avec escalidraw
 <details>
   <summary>Schémas</summary>
 
+  
   Cluster -> Node -> Pods -> Containers
   
-  - Élément 1
-  - Élément 2
+  ![Logo du projet](Sans-titre-2025-09-11-0954.png)
+
 </details>
