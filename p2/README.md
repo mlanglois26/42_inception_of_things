@@ -3,7 +3,7 @@
 Contrairement à l'exo précedent, on ne créer qu'une seule vm. Tout sera donc géré depuis le master node.
 Avec K8s ça ne serait pas une bonne pratique mais K3s le permet.
 
-Le but du 2e exo est donc de créer une vm, donc un node dans laquel on lancera 3 apps différentes avec 
+Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 3 apps différentes avec 
 - un pod pour app1
 - trois pods pour app2
 - un pod pour app3
@@ -49,7 +49,7 @@ Le but du 2e exo est donc de créer une vm, donc un node dans laquel on lancera 
 
   <table>
     <tr>
-      <td><img src="../images/archi-2.png" alt="archi-2" width="800"/></td>
+      <td><img src="../images/network.png" alt="network" width="800"/></td>
     </tr>
   </table>
 </details>
@@ -59,77 +59,170 @@ Le but du 2e exo est donc de créer une vm, donc un node dans laquel on lancera 
 ## Explication du code
 
 
-Vagrantfile
+<details>
+<summary><strong>Vagrantfile</strong></summary>
+<br>
 
-sync_folder monte un volume partagé entre le local et la vm
-server.vm.network :private_network, ip: "192.168.56.110" -> donne une ip fixe à la vm (dans un réseau privé donc accessible que depuis le local et les autres vm construite depuis ce local)
+<u><strong>Dossier partagé</strong></u>
 
-Lorsque l'on lance la vm, le script qui s'execute c'est server.sh
--> on installe et lance k3s avec curl -sfL https://get.k3s.io | sh -
+`sync_folder` monte un volume partagé entre la machine locale et la VM.  
+Cela permet de synchroniser des fichiers entre l’hôte et la machine virtuelle sans copie manuelle.
 
--> on créer le dossier /root/.kube
--> on copie y copie le contenu de cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
--> on donne les droits de lecture/écriture à root
+Concrètement :
+- les fichiers sont accessibles **des deux côtés**
+- toute modification sur le poste local est immédiatement visible dans la VM
 
-kubectl c'est l'outils de ligne de commande
-pour fonctionner il a besoin de savoir :
--> ou est le cluster (IP + port)
--> comment s'authentifier (certificats)
--> quel cluster utiliser
-toutes ces infos sont présentes dans le file kubeconfig.yml
+---
 
-kubectl cherche son fichier de config par défault dans /root/config
+<u><strong>Réseau</strong></u>
+
+```ruby
+server.vm.network :private_network, ip: "192.168.56.110"
+```
+
+- Attribue une IP fixe à la VM
+- La VM est placée dans un réseau privé
+- Accessible uniquement depuis :
+    - la machine hôte
+    - les autres VM du même hôte
+- Non accessible directement depuis l’extérieur
+
+<u><strong>Forwarded port</strong></u>
+
+```ruby
+server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
+```
+
+- Redirige le port 8082 de la machine hôte vers le port 22 de la VM
+- Permet de se connecter en SSH à la VM via :
+  ```ruby
+  ssh -p 8082 vagrant@localhost
+  ```
+  Ce port n’est accessible que depuis la machine locale
+
+💡 En résumé :
+
+- private_network → communication directe hôte ↔ VM via IP
+- forwarded_port → accès à un service de la VM via localhost:PORT
+</details>
+
+<details>
+<summary><strong>Server.sh</strong></summary>
+<br>
+  Lorsque la VM démarre, le script **server.sh** est automatiquement exécuté.
+
+- Installation de k3s avec :
+```ruby
+curl -sfL https://get.k3s.io | sh -
+```
+
+- on créer le dossier /root/.kube
+- on copie y copie le contenu de /etc/rancher/k3s/k3s.yaml /root/.kube/config
+- on donne les droits de lecture/écriture à root
+
+<u>Pourquoi ?</u>
+
+Parce que kubectl cherche son fichier de config par défault dans /root/config
 MAIS k3s le créer par défault dans etc/rancher/k3s/k3s.yaml
 
-doucle sécu avec la variable d'env exportée
+<u>Kubectl, c'est quoi ?</u>
 
-ensuite on teste kubectl get nodes juste pour être sûre que la cli soit fonctionnelle avant d'utiliser les commandes qu'on veut vraiment lancer
-car kubernetes démarre lentement
-l'api server n'est pas encore prête donc tester jusqu'à ce que se soit bon
+C'est l'outils de ligne de commande de kubernetes
+Pour fonctionner il a besoin de savoir :
+- ou est le cluster (IP + port)
+- comment s'authentifier (certificats)
+- quel cluster utiliser
 
-les config maps
--> un object kubernetes qui stocke des fichiers (en l'occurence nos index.html)
--> create echoue si la configmap existe deja
--> --dry-run
+Toutes ces infos sont présentes dans le file kubeconfig.yml
 
--> les pods vont monter ces configs maps
+<u>Test</u>
+
+```ruby
+kubectl get nodes
+```
+
+C'est juste pour être sûre que la cli soit fonctionnelle avant d'utiliser les commandes qu'on veut vraiment lancer
+Car kubernetes démarre lentement et l'api server peut ne pas être prête à temps
+</details>
+
+<details>
+<summary><strong>Configmap</strong></summary>
+<br>
+
+Une Configmap, c'est un object kubernetes qui stocke des fichiers (en l'occurence nos index.html)
+
+- create seul echoue si la configmap existe deja
+- apply seul nécessite un YAML
+
+- --dry-run=client -> ne créer rien, génère la ressource
+- -o yaml -> sort la configmap en yaml 
+- --save-config -> permet à apply de gérer les diffs
+
+Le deployment des pods est l'est l'endroit où l'on va monter ces configs maps
 
 Sans ConfigMap :
-nginx → page par défaut
+- nginx → page par défaut
 
 Avec ConfigMap :
-nginx → /usr/share/nginx/html → ton index.html
+- nginx → /usr/share/nginx/html → ton index.html
+
+<table>
+  <tr>
+    <td><img src="../images/volume.png" alt="volume" width="800"/></td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>Deployment</strong></summary>
+<br>
+<u>Deploy.yaml :</u> 
+
+- replicas -> je dis combien je veux de pods
+- le template décrit le pod "type", chaque replicas sera un pod basé sur ce template
+- volumeMount déclare le point de montage cad ou on veut monter le voulme
+- le volume est alimenté par la config map
+- important les lablels doivent mathcer celui du deployment
+</details>
+
+<details>
+<summary><strong>Service</strong></summary>
+<br>
+
+<u>Service.yml :</u>
+
+- Le Service fournit une **adresse IP stable** et un **nom DNS interne** pour accéder aux pods sélectionnés.
+- Il effectue automatiquement un **load balancing** si plusieurs pods correspondent au selector.
+- Les pods ont des IP internes éphémères → le Service **abstrait le réseau des pods**.
+- Le **selector** du Service doit matcher les labels du Deployment pour cibler les bons pods.
+- Définition des ports :
+  - `port` → port interne du Service
+  - `targetPort` → port sur lequel le container écoute
+  - `nodePort` → port exposé sur les nœuds pour l’accès externe
+- `type: NodePort` → Service accessible depuis l’extérieur via `<NodeIP>:<nodePort>`
+- Pour un accès uniquement interne au cluster, utiliser `type: ClusterIP`.
+
+</details>
 
 
-deploy.yml
+<details>
+<summary><strong>Ingress</strong></summary>
+<br>
 
-le spec du deployment 
--> replicas -> je dis combien je veux de pods
--> le template décrit le pod "type", chaque replicas sera un pod basé sur ce template
--> volumeMount déclare le point de montage cad ou on veut monter le voulme
--> le volume est alimenté par la config map
--> important les lablels doivent mathcer celui du deployment
+- C'est une configuration qui décrit des règles (host et path) et vers quels services router
+- L’Ingress est la **couche d’accès HTTP externe**.
+- Il agit comme un **routeur HTTP/HTTPS** pour exposer plusieurs services à l'exterieur.
+- Il fonctionne **toujours avec un Ingress Controller** (Nginx, Traefik…) qui fait le vrai travail de proxy et de load balancing.
+- 🚨 Par default, lorsque l'on installe k3s, son ingress controller Traefik est aussi installé 
 
-service.yml
-
-le service c'est la partie réseau stable vers les pods
-k8s attribue aux pods une ip interne éphémère 
-le service créer une ip stable et un nom dns interne pour les pods selectionnés
-il fait aussi du load balancing si plusieurs pods correspondent au selector
-
-donc le service abstrait le réseau des pods
-
--> le selector du service doit matcher le label du deployment pour pouvoir atteindre les pods
--> creation d'un objet service lié au deployment via selector
--> definition du port interne et du port du pod cible 
--> type clusterIP = acessible que depuis le cluster
--> pour exposer au reste du monde nodePort ou load balancer
-
-ingress.yml
-
-c'est la couche d'accès http externe
--> l'ingress agit comme un routeur http pour exposer plusieurs services à l'exterieur
--> il fonctionne toujours avec un ingress controller qui fait le vrai travail de proxy et load balancing
+- Chaque règle de l’Ingress correspond à un **host** et un **path**.
+- La requête entrante est transmise au **service ciblé** via son nom.
+- Les services exposent les pods à l’échelle du cluster, l’Ingress rend ces services accessibles depuis l’extérieur.
+- Dans les règles :
+  - **service.port.number** → port du service vers lequel la requête est routée
+  - **targetPort** (défini dans le Service) → port sur lequel le container écoute
+- `pathType: Prefix` → toutes les requêtes commençant par ce chemin sont envoyées au service cible.
 
 -> type d'objet = ingress
 -> ingress controller recoit une requete vers un host, et un path, il regarde la rule correspondante
@@ -158,15 +251,46 @@ backend:
       number: 80
 
 Ingress → app1-service:80
+</details>
 
+---
 
-désactiver le ingress controller par defaut de k3s car pas assez permissif pour ce que je veux faire
+## Les CLI utiles
 
-sudo kubectl get svc -n kube-system
-sudo kubectl get pods -n kube-system | grep traefik
-depuis la vm curl -H "Host: app3.com" http://localhost
-dpuis la vm du projet : curl -H "Host: app6.com" http://192.168.56.110 ou sur browser web spécifier nodePort sans host
+- la cli pour avoir le recap des objets kubernetes
+```ruby
+kubectl get all
+```
 
+- la cli pour aller dans le container
+```ruby
+kubectl exec -it <pod-name> -- /bin/sh
+```
+(Si message d'erreur, c'est que la box de la vm n'est pas assez puissante)
 
+- la cli pour avoir les infos services du namespace kube-system (utile pour Traefik)
+```ruby
+kubectl get svc -n kube-system
+```
 
+<u>Les checks :</u>
 
+- Depuis la vm de l'exo :
+```ruby
+curl -H "Host: app3.com" http://localhost
+```
+
+- Depuis l'host (vm projet) :
+```ruby
+curl -H "Host: app1.com" http://192.168.56.110 
+```
+Où pour faire un check sur browser web
+```ruby
+http://192.168.56.110:30081 (le nodePort de app2)
+```
+
+- Dans la vm
+
+- Avec Traefik
+
+- Sans Traefik
