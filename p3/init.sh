@@ -19,7 +19,7 @@ fi
 
 # 3️⃣ Créer le cluster
 echo "Création du cluster $CLUSTER_NAME..."
-k3d cluster create $CLUSTER_NAME --servers 1 --agents 2 --wait
+k3d cluster create $CLUSTER_NAME --servers 1 --agents 1 --wait
 
 # 4️⃣ Créer namespace Argo CD depuis fichier
 echo "Création du namespace argocd..."
@@ -43,3 +43,4 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 echo ""
 
+# ajouter les apply d'ingresses, deploy et service
