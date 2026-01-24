@@ -2,7 +2,17 @@
 
 ---
 
-Le but de l'exo
+Le but de l'exo est d'utiliser :
+
+- k3d, c'est à dire Kubernetes dans Docker
+- ArgoCD, c'est à dire un GitOps controller
+
+k3d qui est un moyen de lancer un cluster kubernetes local dans des containeurs Docker. Le kube-apiserver et les nodes tournent dans des containers Docker. 
+
+L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
+ - argocd-server (UI/API)
+ - argocd-repo-server
+ argocd-application-controller
 
 ---
 
@@ -12,50 +22,43 @@ Le but de l'exo
   <summary>Installation de K3d</summary>
   <br>
 
-Vérifier si l'exécutable k3d est présent avec 
-```bash
-command -v k3d
-```
-Rediriger stdout et stderr /dev/null pour ne rien afficher
-```bash
-&> /dev/null
-```
-Télécharger et installer k3d via le script officiel (-s pour silent mode pour moins de message)
-```bash
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-```
-
-Creation du Cluster
-faire l'init sh cluster
-faire l'init sh des les cli k3s
-
+  Vérifier si l'exécutable k3d est présent avec 
+  ```bash
+  command -v k3d
+  ```
+  Rediriger stdout et stderr /dev/null pour ne rien afficher
+  ```bash
+  &> /dev/null
+  ```
+  Télécharger et installer k3d via le script officiel (-s pour silent mode pour moins de message)
+  ```bash
+  curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+  ```
+  Si le cluster existe déjà, on le supprime. Sinon on le créer avec un node server et un node agent
+  -- wait pour bloquer la commande et attendre que le cluster soit prêt avant le lancer les objets Kubernetes
+  ```bash
+  k3d cluster create $CLUSTER_NAME --servers 1 --agents 1 --wait
+  ```
 </details>
 
 <details>
   <summary>Les Namespaces</summary>
   <br>
-C'est une isolation logique pour organiser les ressources
-Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes
 
-💡 Exemple :
+  - Un namespace, c'est une isolation logique pour organiser les ressources
+  - Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes (c'est Kubernetes qui gère l'ordonnance)
 
-Namespace dev → 3 pods
-Namespace prod → 5 pods
-Cluster avec 2 nodes → les 8 pods peuvent être répartis sur ces 2 nodes selon l’ordonnancement de Kubernetes
+  💡 Bonnes pratiques :
 
-Bonnes pratiques :
+  - Namespaces → utiliser pour organiser, isoler, gérer les droits d’accès et quotas
+  - Nodes → dimensionner selon le nombre de pods, la charge, la résilience
+  - Ne pas créer un node pour chaque namespace → ça devient inutile et compliqué à gérer
 
-Namespaces → utiliser pour organiser, isoler, gérer les droits d’accès et quotas
-Nodes → dimensionner selon le nombre de pods, la charge, la résilience
-Ne pas créer un node pour chaque namespace → ça devient inutile et compliqué à gérer
-
-Donc pour ton setup :
-
-2 namespaces → isolation logique (argocd vs dev)
-
-2 nodes workers → capacité et répartition des pods
-
-Les pods de argocd et dev peuvent cohabiter sur les mêmes nodes.
+  <table>
+    <tr>
+      <td><img src="../images/namespace.png" alt="namespace"/></td>
+    </tr>
+  </table>
  
 </details>
 
@@ -63,27 +66,57 @@ Les pods de argocd et dev peuvent cohabiter sur les mêmes nodes.
   <summary>ArgoCD</summary>
   <br>
 
- - C'est quoi ?
+ - <u>C'est quoi ?</u>
 
-Argo CD est un outil GitOps pour Kubernetes.
+    - Argo CD est un outil GitOps pour Kubernetes.
+    - GitOps : méthode pour gérer ton cluster Kubernetes à partir de Git
+    - Ton dépôt Git devient la “source de vérité” pour l’état désiré de tes applications
+    - Kubernetes n’a qu’à appliquer ce qui est défini dans Git
+    - Argo CD observe ton Git et fait en sorte que ton cluster corresponde toujours à ce que tu as défini dans Git.
+    - Si un pod est supprimé manuellement → Argo CD peut le recréer automatiquement
+    - Si tu modifies un manifeste dans Git → Argo CD met à jour ton cluster
+    <br>
+    💡 Donc en gros, Kubernetes obéit à Git. Plus besoin de `kubectl apply` les `deployements`, les `services` et les `ingress` à la main
 
-GitOps : méthode pour gérer ton cluster Kubernetes à partir de Git
+<br>
 
-Ton dépôt Git devient la “source de vérité” pour l’état désiré de tes applications
+- <u>C'est quoi la diff avec une Github Action ?</u>
 
-Kubernetes n’a qu’à appliquer ce qui est défini dans Git
+    - Avec la GitHubAction, il faudrait décrire la step. On aurait toujours le .yaml avec notre `kubectl apply`
 
-Argo CD observe ton Git et fait en sorte que ton cluster corresponde toujours à ce que tu as défini dans Git.
+| Aspect              | CI/CD classique                  | GitOps / Argo CD                                 |
+| ------------------- | -------------------------------- | ------------------------------------------------ |
+| Déploiement         | `kubectl apply` dans un workflow | Argo CD lit Git et applique tout automatiquement |
+| Surveillance        | Aucune                           | Argo CD monitor le cluster et Git                |
+| Gestion des dérives | Manuelle                         | Auto-heal / reconcile                            |
+| Workflow Git        | “push → CI → apply → cluster”    | “push → Argo CD synchronise → cluster”           |
+| Qui applique        | Runner GitHub Actions            | Argo CD (controller dans le cluster)             |
 
-Si un pod est supprimé manuellement → Argo CD peut le recréer automatiquement
 
-Si tu modifies un manifeste dans Git → Argo CD met à jour ton cluster
+<br>
 
-- C'est quoi la diff avec une Github Action ?
+- <u>Accéder à l'UI ArgoCD</u>
 
-- Accéder à l'UI
+  Attends que le pod UI (argocd-server) soit prêt avec :
+  ```ruby
+  kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
+  ```
+  
+  Ouvre un tunnel depuis la vm vers ArgoCD
+  ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8080:443
+  ```
+  L'UI sera sur ***http://localhost:8080***
+
+
+  Pour s'y connecter, ArgoCD créer automatiquement un mot de passe admin initial
+  Il le stock dans un secret Kubernetes intitulé ***argocd-initial-admin-secret***, il faut donc le récupérer avec :
+  ```bash
+  kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
+  ```
+  - extrait la valeur du password avec jsonpath
+  - décode avec base64 -d
 </details>
-
 
 ---
 
@@ -92,6 +125,8 @@ Si tu modifies un manifeste dans Git → Argo CD met à jour ton cluster
 C'est un objet ArgoCD
 Contrairement au deployment, service et à l'ingress qui sont des objets Kubernetes.
 Donc le application.yaml ne créer pas de pods
+a verifier ça 
 
 Son rôle, c'est de dire à ArgoCD, observe ce repo git et applique tout ce qui est là dans le cluster
 
+Un manifest = un objet au sens kubernetes

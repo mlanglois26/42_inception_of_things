@@ -21,6 +21,10 @@ fi
 echo "Création du cluster $CLUSTER_NAME..."
 k3d cluster create $CLUSTER_NAME --servers 1 --agents 1 --wait
 
+# 6️⃣ Créer namespace dev depuis fichier
+echo "Création du namespace dev..."
+kubectl apply -f dev/namespace.yaml
+
 # 4️⃣ Créer namespace Argo CD depuis fichier
 echo "Création du namespace argocd..."
 kubectl apply -f argocd/namespace.yaml
@@ -29,18 +33,12 @@ kubectl apply -f argocd/namespace.yaml
 echo "Installation d'Argo CD..."
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# 6️⃣ Créer namespace dev depuis fichier
-echo "Création du namespace dev..."
-kubectl apply -f dev/namespace.yaml
-
-echo "Cluster et Argo CD prêts ✅"
-echo "Pour accéder à l'UI Argo CD :"
-echo "kubectl port-forward svc/argocd-server -n argocd 8080:443"
-echo "Login: admin"
-echo "Password:"
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
 
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 echo ""
+
+# ajouter kubectl apply -f argocd/application.yaml
+
 
 # ajouter les apply d'ingresses, deploy et service
