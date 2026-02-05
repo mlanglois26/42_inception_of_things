@@ -86,3 +86,67 @@ En résumé, k3d est **k3s dans Docker**, parfait pour expérimenter ou dévelop
 
 </details>
 
+---
+
+<details>
+<summary>Configuration initiale de la VM</summary>
+<br>
+
+<u>1. Redimensionner l'écran (Guest Additions)</u>
+
+Installer les dépendances puis les Guest Additions VirtualBox :
+
+```bash
+sudo apt update
+sudo apt install build-essential dkms linux-headers-$(uname -r)
+```
+
+Dans le menu VirtualBox : **Périphériques → Insérer l'image CD des Additions invité...**
+
+```bash
+sudo mount /dev/cdrom /mnt
+sudo /mnt/VBoxLinuxAdditions.run
+sudo reboot
+```
+
+<u>2. Configurer le clavier en AZERTY</u>
+
+```bash
+gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'fr')]"
+```
+
+<u>3. Configurer une clé SSH pour GitHub</u>
+
+```bash
+ssh-keygen -t ed25519 -C "ton-email@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Copier la clé publique sur GitHub : **Settings → SSH and GPG keys → New SSH key**
+
+Tester la connexion :
+
+```bash
+ssh -T git@github.com
+```
+
+<u>4. Set up Vagrant</u>
+
+```bash
+# Installer les prérequis
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+
+# Ajouter la clé GPG et le dépôt HashiCorp
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/hashicorp.gpg
+sudo chmod a+r /etc/apt/keyrings/hashicorp.gpg
+echo "deb [signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(. /etc/os-release && echo "$VERSION_CODENAME") main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+# Installer Vagrant
+sudo apt update
+sudo apt install -y vagrant
+```
+
+</details>
+
