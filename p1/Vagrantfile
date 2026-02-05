@@ -28,6 +28,7 @@ Vagrant.configure("2") do |config|
     config.vm.define machine[:hostname] do |node|
       node.vm.box = machine[:box]
       node.vm.hostname = machine[:hostname]
+      node.vm.boot_timeout = 600
       node.vm.network :private_network, ip: machine[:ip]
       node.vm.network "forwarded_port",
         guest: 22,
