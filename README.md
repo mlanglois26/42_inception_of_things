@@ -1,11 +1,12 @@
 # 42_inception_of_things
 
 Le projet doit être réalisé dans une **VM**.
+On va créer des VM dans une VM. On va donc faire de la nested virtualization. (Donc on va avoir beson de pas mal de RAM et plusieurs processeurs).
 
 ## Étapes à suivre
 
 - Set up une VM
-- Installer un hyperviseur pour pouvoir lancer des VMs dans la VM
+- Installer un hyperviseur pour pouvoir lancer des VMs dans la VM (l'option 'Enable Nested Paging' de la VM hôte doit être cochée pour permettre la nested virtualization).
 - Installer **Vagrant**
 
 Le projet a pour but de découvrir **K3s** avec **Vagrant** puis **K3d**.
