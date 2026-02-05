@@ -4,12 +4,12 @@ set -e
 # Installer K3s
 curl -sfL https://get.k3s.io | sh -
 
-mkdir -p /root/.kube
-cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
-chmod 600 /root/.kube/config
+# mkdir -p /root/.kube
+# cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
+# chmod 600 /root/.kube/config
 
-# Exporter kubeconfig pour kubectl
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# # Exporter kubeconfig pour kubectl
+# export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 # Attendre que le server K3s soit prêt
 until kubectl get nodes &>/dev/null; do
