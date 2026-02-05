@@ -6,7 +6,7 @@ echo "[SERVER] Installation de k3s server..."
 curl -sfL https://get.k3s.io | sh -
 
 echo "[SERVER] Attente du token..."
-while [ ! -f /var/lib/rancher/k3s/server/node-token ]; do
+while [[ ! -f /var/lib/rancher/k3s/server/node-token ]]; do
   sleep 1
 done
 
