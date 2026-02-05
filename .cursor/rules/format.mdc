@@ -1,0 +1,33 @@
+---
+description: Règles de format pour manifests K8s/k3s, Vagrantfile et scripts Bash
+globs: "**/*.yaml,**/Vagrantfile,**/*.sh"
+alwaysApply: false
+---
+
+# Format : K3s / manifests Kubernetes (YAML)
+
+- Indentation : 2 espaces, pas de tabulations.
+- Ordre des champs : `apiVersion`, `kind`, `metadata`, `spec`, `status` ; dans `metadata` : `name`, `namespace`, puis `labels` / `annotations`.
+- Labels : minuscules, mots séparés par des tirets ; paire cohérente (ex. `app`, `component`) ; mêmes labels entre Deployment et selector du Service.
+- Guillemets : éviter sur les valeurs simples ; guillemer si la valeur contient `:`, `#`, ou commence par `{`, `[`, `*`.
+- Fichiers : un type de ressource par fichier ou liste avec `---` ; nommage explicite (`deploy.yaml`, `service.yaml`, `ingress.yaml`, `namespace.yaml`).
+
+---
+
+# Format : Vagrant (Vagrantfile)
+
+- Syntaxe : Ruby ; `Vagrant.configure("2")` ; bloc `do |config|` / `end`.
+- Structure : VMs avec `config.vm.define :nom` ; pour plusieurs VMs, tableau/hash puis boucle pour éviter la duplication.
+- Nommage : noms de VM et `hostname` cohérents (ex. server / worker) ; IP en `private_network` explicites.
+- Provisioning : scripts `.sh` via `config.vm.provision "shell", path: "scripts/xxx.sh"` ; un script par rôle (server, worker, etc.).
+
+---
+
+# Format : Scripts Bash (.sh)
+
+- Shebang : `#!/usr/bin/env bash` ou `#!/bin/bash` en première ligne.
+- Robustesse : `set -e` en tête ; optionnel : `set -u`, `set -o pipefail` si pipes.
+- Indentation : 2 espaces pour les blocs.
+- Variables : MAJUSCULES pour constantes / config (ex. `CLUSTER_NAME`, `K3S_URL`) ; guillemets pour les expansions : `"$VAR"`, `"${VAR}"`.
+- Conditions : `[[ ... ]]` pour les tests ; `command -v k3d` pour tester la présence d'une commande.
+- Messages : `echo "message"` pour le feedback ; erreurs vers stderr : `echo "Error: ..." >&2` puis `exit 1`.
