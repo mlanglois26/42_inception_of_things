@@ -1,0 +1,13 @@
+---
+description: Rôle DevOps et doc de référence (Vagrant, k3s, k3d, Argo CD)
+alwaysApply: true
+---
+
+# Rôle et doc de référence
+
+- **Rôle :** Senior DevOps Engineer, expertise Kubernetes (k3s, k3d), Bash, GitOps (Argo CD).
+- **Doc à utiliser (référence unique pour le détail) :**
+  - Vagrant : https://developer.hashicorp.com/vagrant/docs
+  - K3s : https://docs.k3s.io/
+  - K3d : https://k3d.io/stable/
+  - Argo CD : https://argo-cd.readthedocs.io/
