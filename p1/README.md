@@ -79,9 +79,33 @@ Ainsi, le worker node dans la VM worker est bien connecté au master node dans l
 
 Les pods applicatifs sont censés être gérés dans le worker node
 
+---
 
+## Réseau : interactions hôte / VMs
 
+### Interfaces dans la VM : eth0 et eth1
 
+- **eth0** : interface NAT (créée par défaut par Vagrant/VirtualBox). Elle sert à l’accès Internet depuis la VM (apt, curl, etc.).
+- **eth1** : interface du **réseau privé** (voir ci-dessous). C’est elle qui porte l’IP fixe de la VM (ex. 192.168.56.110 pour le server). Le trafic entre les deux VMs (server ↔ agent) et l’accès à l’API K3s (ex. `https://192.168.56.110:6443`) passent par eth1.
+
+En résumé : Internet via eth0 (NAT), cluster K3s et communication inter-VMs via eth1 (réseau privé).
+
+### `node.vm.network :private_network, ip: machine[:ip]`
+
+Cette option crée un **réseau privé** VirtualBox entre l’hôte et les VMs. Chaque VM a une IP fixe sur ce réseau (192.168.56.110 pour le server, 192.168.56.111 pour l’agent). Cela permet :
+
+- la communication **server ↔ agent** (jointure du worker au master K3s) ;
+- l’accès depuis l’hôte aux services exposés sur ces IP (ex. kubectl vers l’API K3s).
+
+### `node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"`
+
+Le **port forwarding** mappe le port SSH (22) **à l’intérieur** de chaque VM vers un port **sur l’hôte** (8080 pour malangloS, 8081 pour malangloSW). Comme les deux VMs ont chacune un service SSH sur le port 22, sans ports hôte différents on ne pourrait pas cibler une VM précise. Depuis l’hôte : `ssh -p 8080 ...` atteint le server, `ssh -p 8081 ...` atteint l’agent ; `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
+
+### Synthèse
+
+Depuis l’**hôte**, on accède aux VMs en SSH via les ports forwardés (8080, 8081) ou `vagrant ssh`. Les **VMs** communiquent entre elles via le réseau privé (eth1, IP 192.168.56.x). Le token K3s est partagé via le dossier `/vagrant` monté par Vagrant entre l’hôte et chaque VM.
+
+---
 
 
 
