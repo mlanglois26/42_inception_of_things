@@ -31,14 +31,10 @@ kubectl apply -f argocd/namespace.yaml
 
 # 5️⃣ Installer Argo CD officiel
 echo "Installation d'Argo CD..."
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
+kubectl apply -n argocd --server-side=true -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
 
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 echo ""
 
 # ajouter kubectl apply -f argocd/application.yaml
-
-
-# ajouter les apply d'ingresses, deploy et service
