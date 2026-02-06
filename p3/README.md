@@ -16,6 +16,55 @@ L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
 
 ---
 
+### Prérequis : Docker & kubectl
+
+k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` est nécessaire pour interagir avec le cluster. Il faut donc les installer sur la machine hôte avant de lancer `init.sh`.
+
+<details>
+  <summary>Installer Docker</summary>
+  <br>
+
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y docker.io
+  ```
+
+  Démarrer le daemon et l'activer au boot :
+  ```bash
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  ```
+
+  Ajouter ton utilisateur au groupe `docker` (pour ne pas avoir besoin de `sudo` à chaque commande) :
+  ```bash
+  sudo usermod -aG docker $USER
+  ```
+  Puis **se déconnecter / reconnecter** (ou `newgrp docker`) pour que le changement prenne effet.
+
+  Vérifier que Docker tourne :
+  ```bash
+  docker ps
+  ```
+</details>
+
+<details>
+  <summary>Installer kubectl</summary>
+  <br>
+
+  `kubectl` est le CLI pour piloter un cluster Kubernetes. k3d crée le cluster et configure le kubeconfig, mais il ne fournit pas `kubectl`.
+
+  ```bash
+  sudo snap install kubectl --classic
+  ```
+
+  Vérifier l'installation :
+  ```bash
+  kubectl version --client
+  ```
+</details>
+
+---
+
 ### Init.sh
 
 <details>
