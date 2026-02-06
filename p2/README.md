@@ -77,7 +77,7 @@ Concrètement :
 <u><strong>Réseau</strong></u>
 
 ```ruby
-server.vm.network :private_network, ip: "192.168.56.110"
+server.vm.network :private_network, ip: "192.168.121.110"
 ```
 
 - Attribue une IP fixe à la VM
@@ -282,11 +282,11 @@ curl -H "Host: app3.com" http://localhost
 
 - Depuis l'host (vm projet) :
 ```ruby
-curl -H "Host: app1.com" http://192.168.56.110 
+curl -H "Host: app1.com" http://192.168.121.110
 ```
 Où pour faire un check sur browser web
 ```ruby
-http://192.168.56.110:30081 (le nodePort de app2)
+http://192.168.121.110:30081 (le nodePort de app2)
 ```
 
 - Dans la vm
@@ -294,3 +294,63 @@ http://192.168.56.110:30081 (le nodePort de app2)
 - Avec Traefik
 
 - Sans Traefik
+
+---
+
+## Pourquoi KVM et pas VirtualBox ?
+
+En **nested virtualization** (VM mère → VM Vagrant), on a deux niveaux d'hyperviseurs. Le choix du provider change beaucoup les perfs :
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Hôte physique (nested VT-x activé)                              │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │  VM mère (ex. Ubuntu)                                      │   │
+│  │  ┌─────────────────────┐   ┌─────────────────────────────┐ │   │
+│  │  │ VirtualBox (type 2)  │   │ KVM (dans le noyau Linux)   │ │   │
+│  │  │ → 2e couche lourde  │   │ → 1 seule couche, léger     │ │   │
+│  │  │ → souvent lent      │   │ → nested KVM bien supporté  │ │   │
+│  │  └─────────────────────┘   └─────────────────────────────┘ │   │
+│  │           ❌ lent                        ✅ préféré          │   │
+│  └───────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- **VirtualBox** = hyperviseur de type 2 (logiciel complet) → double couche en nested = souvent très lent.
+- **KVM** = intégré au noyau, conçu pour la virtualisation, nested KVM documenté et performant → on privilégie libvirt/KVM.
+
+---
+
+## Setup (KVM / libvirt)
+
+Prérequis sur la machine qui lance Vagrant (Ubuntu/Debian) :
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libvirt-dev libvirt-daemon-system qemu-kvm
+vagrant plugin install vagrant-libvirt
+```
+
+Optionnel : ajouter son utilisateur au groupe `libvirt` puis se reconnecter (ou `newgrp libvirt`) :
+
+```bash
+sudo usermod -aG libvirt $USER
+```
+
+Récupérer la box (une fois) puis lancer la VM :
+
+```bash
+cd p2
+vagrant box add generic/debian12 --provider libvirt   # une seule fois
+vagrant up --provider=libvirt
+```
+
+**Faut-il préciser le provider à chaque fois ?**  
+Oui, sauf si tu fixes le provider par défaut. Pour ne plus avoir à mettre `--provider=libvirt` :
+
+```bash
+export VAGRANT_DEFAULT_PROVIDER=libvirt
+vagrant up
+```
+
+Tu peux ajouter `export VAGRANT_DEFAULT_PROVIDER=libvirt` dans ton `~/.bashrc` si tu restes toujours sur libvirt pour ce projet.
