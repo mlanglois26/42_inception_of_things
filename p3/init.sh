@@ -36,5 +36,3 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -
 
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 echo ""
-
-# ajouter kubectl apply -f argocd/application.yaml

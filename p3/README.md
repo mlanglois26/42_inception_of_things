@@ -169,6 +169,35 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
 
 ---
 
+### Run.sh et connexion des ports
+
+<details>
+  <summary>Comment les ports sont connectés</summary>
+  <br>
+
+  Le cluster k3d tourne dans Docker. Les services Kubernetes ne sont pas directement accessibles depuis la machine hôte. On utilise `kubectl port-forward` pour créer un tunnel entre un port local et un service du cluster.
+
+  ```
+  Machine hôte                Cluster k3d (Docker)
+  ─────────────               ────────────────────────────────
+
+  localhost:8080  ──tunnel──▶  svc/argocd-server:443  ──▶  pod argocd-server
+  localhost:8888  ──tunnel──▶  svc/my-app:80          ──▶  pod my-app:8888
+  ```
+
+  | Port local | Service Kubernetes | Port du service | Port du conteneur | Accès |
+  |---|---|---|---|---|
+  | 8080 | `svc/argocd-server` (namespace argocd) | 443 | 8080 | http://localhost:8080 |
+  | 8888 | `svc/my-app` (namespace dev) | 80 | 8888 | http://localhost:8888 |
+
+  - **`svc/my-app` port 80 → targetPort 8888** : le Service écoute sur le port 80 et redirige vers le port 8888 du conteneur (celui sur lequel l'image `wil42/playground` écoute)
+  - **`port-forward 8888:80`** : mappe le port 8888 de la machine hôte vers le port 80 du Service
+
+  `run.sh` lance les deux port-forwards en arrière-plan. `Ctrl+C` les stoppe.
+</details>
+
+---
+
 ### Application.yaml
 
 C'est un objet ArgoCD
