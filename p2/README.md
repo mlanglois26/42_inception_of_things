@@ -77,7 +77,7 @@ Concrètement :
 <u><strong>Réseau</strong></u>
 
 ```ruby
-server.vm.network :private_network, ip: "192.168.121.110"
+server.vm.network :private_network, ip: "192.168.56.110"
 ```
 
 - Attribue une IP fixe à la VM
@@ -282,11 +282,11 @@ curl -H "Host: app3.com" http://localhost
 
 - Depuis l'host (vm projet) :
 ```ruby
-curl -H "Host: app1.com" http://192.168.121.110
+curl -H "Host: app1.com" http://192.168.56.110
 ```
 Où pour faire un check sur browser web
 ```ruby
-http://192.168.121.110:30081 (le nodePort de app2)
+http://192.168.56.110:30081 (le nodePort de app2)
 ```
 
 - Dans la vm
