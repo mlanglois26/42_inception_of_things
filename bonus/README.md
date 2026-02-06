@@ -36,17 +36,56 @@ de production realiste.
 ## Architecture
 
 ```
-k3d cluster IOT-cluster
- ├── namespace: gitlab    -> GitLab CE (instance locale)
- ├── namespace: argocd    -> Argo CD (GitOps)
- └── namespace: dev       -> my-app (wil42/playground:v1)
-
-Flux :
-  GitLab (repo iot-bonus) ──git pull──> Argo CD ──deploy──> my-app (dev)
++------------------------------------------------------------------+
+|                   k3d cluster  IOT-cluster                       |
+|                                                                  |
+|  +-- namespace: gitlab ----------------------------------------+ |
+|  |                                                             | |
+|  |   [Pod gitlab]              [Service gitlab]                | |
+|  |    gitlab/gitlab-ce:latest   ClusterIP :80 / :22            | |
+|  |    ports: 80 (http), 22      gitlab.gitlab.svc.cluster.local| |
+|  |                                                             | |
+|  +-------------------------------------------------------------+ |
+|         |                                                        |
+|         | http://gitlab.gitlab.svc.cluster.local/root/iot-bonus   |
+|         |   (DNS interne K8s)                                    |
+|         v                                                        |
+|  +-- namespace: argocd ----------------------------------------+ |
+|  |                                                             | |
+|  |   [Pod argocd-server]       [Service argocd-server]         | |
+|  |    argocd-server             ClusterIP :443                 | |
+|  |                                                             | |
+|  |   [Pod argocd-repo-server]  [Pod argocd-app-controller]     | |
+|  |                                                             | |
+|  +-------------------------------------------------------------+ |
+|         |                                                        |
+|         | kubectl apply (deploiement automatique)                 |
+|         v                                                        |
+|  +-- namespace: dev -------------------------------------------+ |
+|  |                                                             | |
+|  |   [Pod my-app]              [Service my-app]                | |
+|  |    wil42/playground:v1       ClusterIP :80 -> :8888         | |
+|  |    port: 8888                                               | |
+|  |                                                             | |
+|  +-------------------------------------------------------------+ |
+|                                                                  |
++------------------------------------------------------------------+
+         |               |               |
+    port-forward    port-forward    port-forward
+         |               |               |
+         v               v               v
+   localhost:8181   localhost:8080   localhost:8888
+     (GitLab)        (Argo CD)       (my-app)
 ```
 
 Argo CD surveille le repo GitLab local et deploie automatiquement
 l'application `my-app` dans le namespace `dev`.
+
+**Flux GitOps :**
+1. L'utilisateur pousse des manifests dans le repo `iot-bonus` sur GitLab
+2. Argo CD detecte le changement (poll periodique via DNS interne)
+3. Argo CD applique les manifests dans le namespace `dev`
+4. Le pod `my-app` est cree/mis a jour automatiquement
 
 ## Pre-requis
 
