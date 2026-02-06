@@ -1,5 +1,38 @@
 # Bonus - GitLab local avec Argo CD
 
+## Pourquoi ce bonus ?
+
+Dans la Part 3, Argo CD pull les manifests depuis **GitHub** -- un service
+externe, heberge sur internet, sur lequel on n'a aucun controle.
+
+Le bonus remplace GitHub par une instance **GitLab auto-hebergee** qui tourne
+directement dans le cluster. Le resultat fonctionnel est le meme (GitOps avec
+Argo CD), mais l'interet est ailleurs :
+
+- **Autonomie complete (air-gapped)** : tout fonctionne sans connexion
+  internet une fois deploye. En entreprise (banques, defense, sante), les
+  environnements sont souvent isoles du net ; impossible d'utiliser GitHub.
+- **Maitrise de l'infra Git** : savoir deployer, configurer et maintenir un
+  serveur Git en interne est une competence DevOps cle.
+- **Networking interne Kubernetes** : Argo CD communique avec GitLab via le
+  DNS interne du cluster (`gitlab.gitlab.svc.cluster.local`), ce qui montre
+  la comprehension des services, du DNS et de la communication inter-namespaces.
+- **Pipeline GitOps maitrise de bout en bout** : on controle toute la chaine,
+  du depot Git au deploiement, sans dependre d'un service cloud externe.
+
+```
+Avec GitHub (p3) :
+  push sur GitHub (externe) --> ArgoCD pull --> deploy
+
+Avec GitLab local (bonus) :
+  push sur GitLab (dans le cluster) --> ArgoCD pull --> deploy
+  tout est local, on controle tout
+```
+
+En resume, la plupart des entreprises utilisent GitLab self-hosted (ou Gitea,
+Bitbucket Server...) plutot que GitHub.com. Ce bonus simule un environnement
+de production realiste.
+
 ## Architecture
 
 ```
