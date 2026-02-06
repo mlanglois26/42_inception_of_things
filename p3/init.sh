@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CLUSTER_NAME="mycluster"
+CLUSTER_NAME="IOT-cluster"
 
 # 1️⃣ Installer k3d si pas présent
 if ! command -v k3d &> /dev/null; then

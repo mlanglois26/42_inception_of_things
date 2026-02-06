@@ -54,12 +54,7 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   `kubectl` est le CLI pour piloter un cluster Kubernetes. k3d crée le cluster et configure le kubeconfig, mais il ne fournit pas `kubectl`.
 
   ```bash
-  sudo apt-get update
-  sudo apt-get install -y ca-certificates curl
-  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-  sudo apt-get update
-  sudo apt-get install -y kubectl
+  sudo snap install kubectl --classic
   ```
 
   Vérifier l'installation :
