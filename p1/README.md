@@ -23,6 +23,10 @@ vagrant --help          # Affiche l'aide de Vagrant
 vagrant up              # Lance et provisionne les VMs définies dans le Vagrantfile
 vagrant ssh 'name'      # Se connecter à la VM spécifiée
 vagrant provision       # Re-provisionne la VM après modification d'un script
+vagrant status          # Affiche l'état des VMs du projet (running, shutoff...)
+vagrant halt            # Éteint proprement les VMs (sans les supprimer)
+vagrant destroy -f      # Supprime complètement les VMs
+virsh list --all        # Liste toutes les VMs libvirt (état bas niveau)
 ```
 
 ---
@@ -69,6 +73,59 @@ Ainsi, le worker node dans la VM worker est bien connecté au master node dans l
 
 </details>
 
+<details>
+<summary><u>Adaptations pour libvirt/KVM (--node-ip, race condition)</u></summary>
+<br>
+
+Avec **VirtualBox**, chaque VM n'a qu'une interface réseau principale et k3s la prend par défaut. Avec **libvirt/KVM**, chaque VM a **deux interfaces** :
+
+- **eth0** : réseau NAT libvirt (`192.168.121.x`) — gestion SSH, accès internet
+- **eth1** : réseau privé Vagrant (`192.168.56.x`) — communication inter-VMs
+
+Par défaut, k3s utilise **eth0** (la première interface). Problème : le server s'annonce sur `192.168.121.x` et l'agent essaie de le joindre sur `192.168.56.110` → ça ne matche pas.
+
+**Flags ajoutés dans server.sh :**
+
+```bash
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
+  --node-ip 192.168.56.110 \
+  --advertise-address 192.168.56.110 \
+  --tls-san 192.168.56.110" sh -
+```
+
+| Flag | Rôle |
+|------|------|
+| `--node-ip` | Force k3s à s'enregistrer avec cette IP dans `kubectl get nodes` |
+| `--advertise-address` | L'API server écoute et s'annonce sur cette IP (pas sur l'IP NAT) |
+| `--tls-san` | Ajoute cette IP comme nom valide dans le certificat TLS du server |
+
+**Flag ajouté dans agent.sh :**
+
+```bash
+INSTALL_K3S_EXEC="--node-ip 192.168.56.111"
+```
+
+L'agent s'annonce aussi avec la bonne IP dans le cluster.
+
+---
+
+**Race condition avec libvirt :**
+
+Avec libvirt, les deux VMs démarrent **en parallèle** (contrairement à VirtualBox qui est séquentiel). Cela pose deux problèmes :
+
+1. **Token périmé** : le dossier `/vagrant` (NFS) peut contenir un token d'un `vagrant up` précédent. L'agent le trouve immédiatement et tente de rejoindre un cluster qui n'existe plus.
+   → **Fix** : `rm -f /vagrant/token` au début de `server.sh`
+
+2. **Server pas encore prêt** : l'agent trouve le token mais le server k3s n'est pas encore démarré sur le port 6443.
+   → **Fix** : boucle d'attente dans `agent.sh` avant d'installer :
+   ```bash
+   while ! curl -sk --connect-timeout 2 "https://${SERVER_IP}:6443" >/dev/null 2>&1; do
+     sleep 3
+   done
+   ```
+
+</details>
+
 ---
 
 ## Récap
@@ -85,14 +142,14 @@ Les pods applicatifs sont censés être gérés dans le worker node
 
 ### Interfaces dans la VM : eth0 et eth1
 
-- **eth0** : interface NAT (créée par défaut par Vagrant/VirtualBox). Elle sert à l’accès Internet depuis la VM (apt, curl, etc.).
+- **eth0** : interface NAT (créée par défaut par Vagrant/libvirt). Elle sert à l’accès Internet depuis la VM (apt, curl, etc.).
 - **eth1** : interface du **réseau privé** (voir ci-dessous). C’est elle qui porte l’IP fixe de la VM (ex. 192.168.56.110 pour le server). Le trafic entre les deux VMs (server ↔ agent) et l’accès à l’API K3s (ex. `https://192.168.56.110:6443`) passent par eth1.
 
 En résumé : Internet via eth0 (NAT), cluster K3s et communication inter-VMs via eth1 (réseau privé).
 
 ### `node.vm.network :private_network, ip: machine[:ip]`
 
-Cette option crée un **réseau privé** VirtualBox entre l’hôte et les VMs. Chaque VM a une IP fixe sur ce réseau (192.168.56.110 pour le server, 192.168.56.111 pour l’agent). Cela permet :
+Cette option crée un **réseau privé** libvirt entre l’hôte et les VMs. Chaque VM a une IP fixe sur ce réseau (192.168.56.110 pour le server, 192.168.56.111 pour l’agent). Cela permet :
 
 - la communication **server ↔ agent** (jointure du worker au master K3s) ;
 - l’accès depuis l’hôte aux services exposés sur ces IP (ex. kubectl vers l’API K3s).
@@ -105,20 +162,3 @@ Le **port forwarding** mappe le port SSH (22) **à l’intérieur** de chaque VM
 
 Depuis l’**hôte**, on accède aux VMs en SSH via les ports forwardés (8080, 8081) ou `vagrant ssh`. Les **VMs** communiquent entre elles via le réseau privé (eth1, IP 192.168.56.x). Le token K3s est partagé via le dossier `/vagrant` monté par Vagrant entre l’hôte et chaque VM.
 
----
-
-
-
-
-
-
-
-<br>
-<br>
-<br>
-
-
-
-
-
-ajouter le bon chemin pour le kubeconfig pour pouvoir utiliser kubectl ?
