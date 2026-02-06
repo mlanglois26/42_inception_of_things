@@ -74,6 +74,41 @@ Ainsi, le worker node dans la VM worker est bien connecté au master node dans l
 </details>
 
 <details>
+<summary><u>Dossier partagé /vagrant et NFS</u></summary>
+<br>
+
+Le token K3s doit être **écrit** par le server et **lu** par l'agent. Pour cela, les deux VMs doivent accéder à un même dossier partagé : `/vagrant`.
+
+**Avec VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Guest Additions (vboxsf). Rien à configurer, ça fonctionne dans les deux sens (lecture/écriture).
+
+**Avec libvirt/KVM**, il n'y a **pas de Guest Additions**. Le dossier `/vagrant` n'est pas monté par défaut. Il faut le déclarer explicitement dans le Vagrantfile :
+
+```ruby
+node.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_udp: false
+```
+
+**Pourquoi NFS et pas rsync ?**
+
+| Type | Direction | Usage |
+|------|-----------|-------|
+| **rsync** | Hôte → VM (copie à `vagrant up`) | Fichiers en lecture seule dans la VM |
+| **nfs** | **Bidirectionnel** (hôte ↔ VM, en temps réel) | Fichiers écrits/lus par les deux VMs |
+
+On a besoin de NFS car :
+1. `server.sh` **écrit** le token dans `/vagrant/token`
+2. `agent.sh` **lit** ce même token depuis `/vagrant/token`
+3. Les deux VMs doivent voir le même fichier via le dossier partagé de l'hôte
+
+Avec rsync, un fichier créé dans la VM resterait local à cette VM et ne serait jamais visible par l'autre.
+
+**Prérequis** : un serveur NFS sur l'hôte :
+```bash
+sudo apt-get install -y nfs-kernel-server
+```
+
+</details>
+
+<details>
 <summary><u>Adaptations pour libvirt/KVM (--node-ip, race condition)</u></summary>
 <br>
 
