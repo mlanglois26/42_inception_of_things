@@ -7,8 +7,8 @@ Vagrant.configure("2") do |config|
     server.vm.boot_timeout = 600
     server.vm.network :private_network, ip: "192.168.56.110"
     server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
-    server.vm.synced_folder "./apps", "/apps", type: "rsync", rsync__args: ["--verbose", "--archive", "--delete", "-z"]
-    server.vm.synced_folder "./ingress", "/ingress", type: "rsync", rsync__args: ["--verbose", "--archive", "--delete", "-z"]
+    server.vm.synced_folder "./apps", "/apps"
+    server.vm.synced_folder "./ingress", "/ingress"
 
     server.vm.provider :libvirt do |lv|
       lv.memory = 1024
