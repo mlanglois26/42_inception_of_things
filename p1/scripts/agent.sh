@@ -10,6 +10,11 @@ done
 
 TOKEN=$(cat /vagrant/token)
 
+echo "[AGENT] Attente que le server k3s soit joignable..."
+while ! curl -sk --connect-timeout 2 "https://${SERVER_IP}:6443" >/dev/null 2>&1; do
+  sleep 3
+done
+
 echo "[AGENT] Installation de k3s agent..."
 
 AGENT_IP="192.168.56.111"
