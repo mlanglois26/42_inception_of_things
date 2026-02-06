@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      containers:
+      - name: gitlab
+        image: gitlab/gitlab-ce:latest
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 22
+          name: ssh
+        env:
+        - name: GITLAB_OMNIBUS_CONFIG
+          value: |
+            external_url 'http://gitlab.gitlab.svc.cluster.local'
+            gitlab_rails['initial_root_password'] = 'password42'
+            nginx['listen_port'] = 80
+            nginx['listen_https'] = false
+            prometheus_monitoring['enable'] = false
+            alertmanager['enable'] = false
+            grafana['enable'] = false
+            gitlab_rails['gitlab_shell_ssh_port'] = 22
+            puma['worker_processes'] = 0
+            sidekiq['max_concurrency'] = 5
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: gitlab-data
+          mountPath: /var/opt/gitlab
+        - name: gitlab-config
+          mountPath: /etc/gitlab
+        - name: gitlab-logs
+          mountPath: /var/log/gitlab
+        readinessProbe:
+          httpGet:
+            path: /-/readiness
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 15
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /-/liveness
+            port: 80
+          initialDelaySeconds: 240
+          periodSeconds: 20
+          timeoutSeconds: 5
+      volumes:
+      - name: gitlab-data
+        emptyDir: {}
+      - name: gitlab-config
+        emptyDir: {}
+      - name: gitlab-logs
+        emptyDir: {}
