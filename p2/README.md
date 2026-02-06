@@ -321,6 +321,44 @@ En **nested virtualization** (VM mère → VM Vagrant), on a deux niveaux d'hype
 
 ---
 
+## Vagrant, libvirt, QEMU, KVM : qui fait quoi ?
+
+```
+┌───────────────────────────────────────────────┐
+│  Vagrant                                       │
+│  → Orchestrateur CLI                           │
+│  → Gère le cycle de vie de la VM               │
+│    (create, up, ssh, destroy, provision...)     │
+│                                                │
+│  ┌───────────────────────────────────────────┐ │
+│  │  vagrant-libvirt (plugin)                  │ │
+│  │  → Fait le lien entre Vagrant et libvirt   │ │
+│  │                                            │ │
+│  │  ┌───────────────────────────────────────┐ │ │
+│  │  │  libvirt                               │ │ │
+│  │  │  → API / couche d'abstraction          │ │ │
+│  │  │  → Pilote les hyperviseurs (KVM, etc.) │ │ │
+│  │  │                                        │ │ │
+│  │  │  ┌──────────────────────────────────┐  │ │ │
+│  │  │  │  QEMU + KVM                      │  │ │ │
+│  │  │  │  → QEMU = émulateur matériel     │  │ │ │
+│  │  │  │  → KVM  = module noyau Linux     │  │ │ │
+│  │  │  │    (accélération hardware)        │  │ │ │
+│  │  │  └──────────────────────────────────┘  │ │ │
+│  │  └───────────────────────────────────────┘ │ │
+│  └───────────────────────────────────────────┘ │
+└───────────────────────────────────────────────┘
+```
+
+| Composant | Rôle | Analogie |
+|-----------|------|----------|
+| **KVM** | Module du **noyau Linux**. Il transforme Linux en hyperviseur en utilisant les instructions CPU (VT-x). C'est lui qui fait tourner la VM à quasi-vitesse native. | Le moteur |
+| **QEMU** | **Émulateur matériel**. Il simule le hardware (carte réseau, disque, écran...) pour la VM. Sans KVM, QEMU émule tout (lent). Avec KVM, QEMU délègue le CPU au noyau et ne gère que le reste. | Le châssis |
+| **libvirt** | **API / daemon** (`libvirtd`). Couche d'abstraction qui pilote QEMU/KVM via une interface unifiée. `virsh`, `virt-manager` et le plugin Vagrant l'utilisent. | Le tableau de bord |
+| **Vagrant** | **Orchestrateur CLI**. Il ne virtualise rien lui-même. Il appelle un **provider** (VirtualBox, libvirt, Docker...) pour créer/gérer les VMs. Il gère aussi le provisioning (scripts), le réseau, les synced folders, SSH, etc. | Le pilote automatique |
+
+---
+
 ## Setup (KVM / libvirt)
 
 Prérequis sur la machine qui lance Vagrant (Ubuntu/Debian) :
