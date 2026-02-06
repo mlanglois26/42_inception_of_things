@@ -1,9 +1,14 @@
 #!/bin/bash
 set -e
 
+SERVER_IP="192.168.56.110"
+
 echo "[SERVER] Installation de k3s server..."
 
-curl -sfL https://get.k3s.io | sh -
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
+  --node-ip ${SERVER_IP} \
+  --advertise-address ${SERVER_IP} \
+  --tls-san ${SERVER_IP}" sh -
 
 echo "[SERVER] Attente du token..."
 while [[ ! -f /var/lib/rancher/k3s/server/node-token ]]; do
