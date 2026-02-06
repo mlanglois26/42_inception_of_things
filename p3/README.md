@@ -16,6 +16,60 @@ L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
 
 ---
 
+### Prérequis : Docker & kubectl
+
+k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` est nécessaire pour interagir avec le cluster. Il faut donc les installer sur la machine hôte avant de lancer `init.sh`.
+
+<details>
+  <summary>Installer Docker</summary>
+  <br>
+
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y docker.io
+  ```
+
+  Démarrer le daemon et l'activer au boot :
+  ```bash
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  ```
+
+  Ajouter ton utilisateur au groupe `docker` (pour ne pas avoir besoin de `sudo` à chaque commande) :
+  ```bash
+  sudo usermod -aG docker $USER
+  ```
+  Puis **se déconnecter / reconnecter** (ou `newgrp docker`) pour que le changement prenne effet.
+
+  Vérifier que Docker tourne :
+  ```bash
+  docker ps
+  ```
+</details>
+
+<details>
+  <summary>Installer kubectl</summary>
+  <br>
+
+  `kubectl` est le CLI pour piloter un cluster Kubernetes. k3d crée le cluster et configure le kubeconfig, mais il ne fournit pas `kubectl`.
+
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  sudo apt-get update
+  sudo apt-get install -y kubectl
+  ```
+
+  Vérifier l'installation :
+  ```bash
+  kubectl version --client
+  ```
+</details>
+
+---
+
 ### Init.sh
 
 <details>
