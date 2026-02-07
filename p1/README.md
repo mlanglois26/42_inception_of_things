@@ -24,7 +24,7 @@ Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM m
 
 ```mermaid
 graph LR
-    subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
+    subgraph vmProjet [VM Projet - VirtualBox]
         direction TB
         server["malangloS - 192.168.56.110 - k3s Server"]
         agent["malangloSW - 192.168.56.111 - k3s Agent"]
@@ -135,32 +135,72 @@ NFS est nécessaire car le partage doit être **bidirectionnel et en temps réel
 
 ---
 
-## Adaptations pour libvirt/KVM
+## Réseau
 
-### Problème des interfaces réseau
+### Les deux interfaces réseau (eth0 / eth1)
 
-Avec **libvirt/KVM**, chaque VM possède **deux interfaces réseau** :
+Avec **libvirt/KVM**, chaque VM possède deux interfaces réseau, chacune sur un réseau différent :
 
-- **eth0** : réseau NAT libvirt (`192.168.121.x`) — gestion SSH, accès internet
-- **eth1** : réseau privé Vagrant (`192.168.56.x`) — communication inter-VM
+```mermaid
+graph TD
+    subgraph vmMere [VM Mere - Ubuntu]
+        subgraph server [malangloS]
+            eth0s["eth0 - 192.168.121.x"]
+            eth1s["eth1 - 192.168.56.110"]
+        end
+        subgraph agentVM [malangloSW]
+            eth0a["eth0 - 192.168.121.x"]
+            eth1a["eth1 - 192.168.56.111"]
+        end
+    end
+    eth0s -->|"apt, curl, DNS..."| inet["Internet"]
+    eth0a -->|"apt, curl, DNS..."| inet
+    eth1s <-->|"k3s API :6443 + token"| eth1a
+```
 
-Par défaut, k3s utilise **eth0** (la première interface). Le server s'annonce alors sur `192.168.121.x` alors que l'agent essaie de le joindre sur `192.168.56.110`. Cela ne fonctionne pas.
+| Interface | Réseau | IP | Rôle |
+|-----------|--------|----|------|
+| **eth0** | NAT libvirt (`192.168.121.0/24`) | Dynamique | Accès internet (apt, curl, téléchargement du binaire k3s...) |
+| **eth1** | Privé Vagrant (`192.168.56.0/24`) | Fixe | Communication inter-VM, API k3s (:6443), accès depuis l'hôte |
 
-Les flags suivants forcent k3s à utiliser la bonne interface :
+eth0 est créée automatiquement par libvirt. eth1 est créée par la directive suivante dans le Vagrantfile :
 
-**Dans server.sh :**
+```ruby
+node.vm.network :private_network, ip: machine[:ip]
+```
 
-| Flag | Rôle |
-|------|------|
-| `--node-ip` | Force k3s à s'enregistrer avec cette IP dans `kubectl get nodes` |
-| `--advertise-address` | L'API server écoute et s'annonce sur cette IP (pas sur l'IP NAT) |
-| `--tls-san` | Ajoute cette IP comme nom valide dans le certificat TLS du server |
+### Pourquoi forcer k3s sur eth1
 
-**Dans agent.sh :**
+Par défaut, k3s s'enregistre sur la **première interface** qu'il trouve, c'est-à-dire eth0. Le server s'annonce alors sur `192.168.121.x` (NAT), mais l'agent essaie de le joindre sur `192.168.56.110` (réseau privé). Cela ne fonctionne pas.
 
-Le flag `--node-ip 192.168.56.111` permet à l'agent de s'annoncer avec la bonne IP dans le cluster.
+Les flags suivants forcent k3s à utiliser eth1 :
 
-### Race condition avec libvirt
+| Flag | Utilisé dans | Rôle |
+|------|-------------|------|
+| `--node-ip` | server.sh + agent.sh | Force k3s à s'enregistrer avec l'IP du réseau privé dans `kubectl get nodes` |
+| `--advertise-address` | server.sh | L'API server écoute et s'annonce sur cette IP (pas sur l'IP NAT) |
+| `--tls-san` | server.sh | Ajoute cette IP comme nom valide dans le certificat TLS du server |
+
+### Port forwarding SSH
+
+Chaque VM a SSH sur le port 22. Pour y accéder depuis la VM mère, le port forwarding mappe des ports hôte différents vers chaque VM :
+
+```mermaid
+graph LR
+    port8080["VM Mere :8080"] -->|SSH| serverSSH["malangloS :22"]
+    port8081["VM Mere :8081"] -->|SSH| agentSSH["malangloSW :22"]
+```
+
+Cela correspond à cette ligne dans le Vagrantfile :
+
+```ruby
+node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"
+```
+
+Les commandes `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
+
+<details>
+<summary><strong>Race condition avec libvirt</strong></summary>
 
 Avec libvirt, les deux VM démarrent **en parallèle** (contrairement à VirtualBox qui est séquentiel). Cela pose deux problèmes :
 
@@ -170,41 +210,7 @@ Avec libvirt, les deux VM démarrent **en parallèle** (contrairement à Virtual
 2. **Server pas encore prêt** : l'agent trouve le token mais le server k3s n'est pas encore démarré sur le port 6443.
    - **Solution** : boucle d'attente dans `agent.sh` qui teste la connexion au port 6443 avant de lancer l'installation.
 
----
-
-## Réseau : interactions hôte / VM
-
-### Interfaces dans la VM : eth0 et eth1
-
-- **eth0** : interface NAT (créée par défaut par Vagrant/libvirt). Elle sert à l'accès internet depuis la VM (apt, curl, etc.).
-- **eth1** : interface du **réseau privé**. C'est elle qui porte l'IP fixe de la VM (ex. `192.168.56.110` pour le server). Le trafic entre les deux VM (server et agent) et l'accès à l'API k3s passent par eth1.
-
-En résumé : internet via eth0 (NAT), cluster k3s et communication inter-VM via eth1 (réseau privé).
-
-### Réseau privé
-
-```ruby
-node.vm.network :private_network, ip: machine[:ip]
-```
-
-Cette option crée un **réseau privé** libvirt entre l'hôte et les VM. Chaque VM a une IP fixe sur ce réseau (`192.168.56.110` pour le server, `192.168.56.111` pour l'agent). Cela permet :
-
-- La communication **server / agent** (jointure de l'agent au master k3s)
-- L'accès depuis l'hôte aux services exposés sur ces IP (ex. kubectl vers l'API k3s)
-
-### Port forwarding
-
-```ruby
-node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"
-```
-
-Le **port forwarding** mappe le port SSH (22) de chaque VM vers un port sur l'hôte (8080 pour malangloS, 8081 pour malangloSW). Comme les deux VM ont chacune un service SSH sur le port 22, des ports hôte différents permettent de cibler chaque VM individuellement.
-
-Depuis l'hôte : `ssh -p 8080 ...` atteint le server, `ssh -p 8081 ...` atteint l'agent. Les commandes `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
-
-### Synthèse
-
-Depuis l'**hôte**, on accède aux VM en SSH via les ports forwardés (8080, 8081) ou via `vagrant ssh`. Les **VM** communiquent entre elles via le réseau privé (eth1, IP `192.168.56.x`). Le token k3s est partagé via le dossier `/vagrant` monté par NFS entre l'hôte et chaque VM.
+</details>
 
 ---
 
