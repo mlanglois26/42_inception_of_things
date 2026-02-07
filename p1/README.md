@@ -3,7 +3,7 @@
 Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déployer un cluster k3s :
 
 - La **VM server** (`malangloS`) héberge le **master node** (control plane).
-- La **VM worker** (`malangloSW`) héberge un **worker node** qui rejoint le cluster du master.
+- La **VM agent** (`malangloSW`) héberge un **agent node** qui rejoint le cluster du master.
 
 ---
 
@@ -12,7 +12,7 @@ Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déploy
 1. Le **Vagrantfile** configure et provisionne les deux VM.
 2. Il appelle automatiquement le script correspondant au rôle de chaque VM :
    - `scripts/server.sh` pour la VM server
-   - `scripts/agent.sh` pour la VM worker
+   - `scripts/agent.sh` pour la VM agent
 
 ---
 
@@ -21,32 +21,32 @@ Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déploy
 Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM mère) contient les deux VM filles qui forment un cluster k3s. Le token de jointure transite par le dossier partagé `/vagrant` (NFS).
 
 ```mermaid
-graph LR
+graph TD
     subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
-        subgraph vmServer ["malangloS (192.168.56.110)"]
-            serverNode["k3s Server Node - Control Plane"]
-        end
-        subgraph vmWorker ["malangloSW (192.168.56.111)"]
-            agentNode["k3s Agent Node"]
-        end
-        sharedFolder["/vagrant - dossier partagé NFS"]
+        server["malangloS - 192.168.56.110 - k3s Server"]
+        agent["malangloSW - 192.168.56.111 - k3s Agent"]
+        nfs["/vagrant - dossier partagé NFS"]
     end
-    serverNode -->|"écrit le token"| sharedFolder
-    sharedFolder -->|"lit le token"| agentNode
-    agentNode -->|"rejoint le cluster via port 6443"| serverNode
+    server -- "écrit le token" --> nfs
+    nfs -- "lit le token" --> agent
+    agent -- "rejoint le cluster via :6443" --> server
 ```
 
-![Archi Cluster](../images/archi-1.png)
+<table>
+<tr>
+<td><img src="../images/archi-1.png" alt="Archi Cluster" width="500"/></td>
+<td><img src="../images/k3s-server-worker.png" alt="Server Agent k3s" width="500"/></td>
+</tr>
+</table>
 
-![Server Worker](../images/k3s-server-worker.png)
-
-Les pods applicatifs sont gérés dans le worker node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
+Les pods applicatifs sont gérés dans l'agent node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
 
 ---
 
 ## Scripts
 
-### server.sh
+<details>
+<summary><strong>server.sh</strong></summary>
 
 Ce script est exécuté automatiquement dans la VM **server** lors du provisioning.
 
@@ -65,11 +65,14 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
 3. Il attend dans une boucle que le **node token** soit généré par k3s (stocké dans `/var/lib/rancher/k3s/server/node-token`).
 4. Il copie ce token dans `/vagrant/token` (dossier partagé NFS) et le rend lisible par tous.
 
-Le token est la clé qui permet à un worker node de rejoindre le cluster. En le plaçant dans `/vagrant`, il devient accessible depuis la VM worker.
+Le token est la clé qui permet à un agent node de rejoindre le cluster. En le plaçant dans `/vagrant`, il devient accessible depuis la VM agent.
 
-### agent.sh
+</details>
 
-Ce script est exécuté automatiquement dans la VM **worker** lors du provisioning.
+<details>
+<summary><strong>agent.sh</strong></summary>
+
+Ce script est exécuté automatiquement dans la VM **agent** lors du provisioning.
 
 Il effectue les opérations suivantes :
 
@@ -89,11 +92,19 @@ curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.110:6443 K3S_TOKEN=${T
   INSTALL_K3S_EXEC="--node-ip 192.168.56.111" sh -
 ```
 
-Le worker node est alors connecté au master node et apparaît dans `kubectl get nodes`.
+L'agent node est alors connecté au master node et apparaît dans `kubectl get nodes`.
+
+</details>
 
 ---
 
 ## Dossier partagé /vagrant et NFS
+
+### Qu'est-ce que NFS ?
+
+**NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
+
+### Pourquoi un dossier partagé ?
 
 Le token k3s doit être **écrit** par le server et **lu** par l'agent. Les deux VM doivent donc accéder à un même dossier partagé : `/vagrant`.
 
@@ -180,7 +191,7 @@ node.vm.network :private_network, ip: machine[:ip]
 
 Cette option crée un **réseau privé** libvirt entre l'hôte et les VM. Chaque VM a une IP fixe sur ce réseau (`192.168.56.110` pour le server, `192.168.56.111` pour l'agent). Cela permet :
 
-- La communication **server / agent** (jointure du worker au master k3s)
+- La communication **server / agent** (jointure de l'agent au master k3s)
 - L'accès depuis l'hôte aux services exposés sur ces IP (ex. kubectl vers l'API k3s)
 
 ### Port forwarding
@@ -206,7 +217,7 @@ Les commandes ci-dessous sont à lancer depuis le répertoire contenant le Vagra
 ```bash
 vagrant up                # Lance et provisionne les VM
 vagrant ssh malangloS     # Se connecter à la VM server
-vagrant ssh malangloSW    # Se connecter à la VM worker
+vagrant ssh malangloSW    # Se connecter à la VM agent
 vagrant status            # Affiche l'état des VM (running, shutoff...)
 vagrant provision         # Re-provisionne les VM après modification d'un script
 vagrant halt              # Éteint proprement les VM (sans les supprimer)
@@ -216,7 +227,7 @@ vagrant destroy -f        # Supprime complètement les VM
 Depuis la VM server, on peut vérifier l'état du cluster :
 
 ```bash
-kubectl get nodes         # Liste les noeuds du cluster (server + worker)
+kubectl get nodes         # Liste les noeuds du cluster (server + agent)
 kubectl get pods -A       # Liste tous les pods sur tous les namespaces
 ```
 
