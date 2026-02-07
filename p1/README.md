@@ -1,125 +1,61 @@
-# K3S avec Vagrant
+# K3s avec Vagrant
 
-Le but du premier exercice est de lancer **deux VMs** :  
+Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déployer un cluster k3s :
 
-- Dans la **VM server**, on installe Kubernetes et on y place le **master node / control plane**.  
-- Dans la **VM worker**, on installe Kubernetes et on y place un **worker node** qui sera rattaché au master node de la VM server.
+- La **VM server** (`malangloS`) héberge le **master node** (control plane).
+- La **VM agent** (`malangloSW`) héberge un **agent node** qui rejoint le cluster du master.
 
----
-
-## Le workflow
-
-1. Le **Vagrantfile** configure et provisionne les VMs.  
-2. Il appelle les scripts responsables des deux setups Kubernetes.
+Le master node gère le cluster (API, scheduling, état) tandis que l'agent node exécute les workloads (pods/containers) qui lui sont assignés.
 
 ---
 
-## Les principales commandes Vagrant
+## Workflow
 
-(A lancer au niveau du Vagrantfile) :
-
-```bash
-vagrant --help          # Affiche l'aide de Vagrant
-vagrant up              # Lance et provisionne les VMs définies dans le Vagrantfile
-vagrant ssh 'name'      # Se connecter à la VM spécifiée
-vagrant provision       # Re-provisionne la VM après modification d'un script
-vagrant status          # Affiche l'état des VMs du projet (running, shutoff...)
-vagrant halt            # Éteint proprement les VMs (sans les supprimer)
-vagrant destroy -f      # Supprime complètement les VMs
-virsh list --all        # Liste toutes les VMs libvirt (état bas niveau)
-```
+1. Le **Vagrantfile** configure et provisionne les deux VM.
+2. Il appelle automatiquement le script correspondant au rôle de chaque VM :
+   - `scripts/server.sh` pour la VM server
+   - `scripts/agent.sh` pour la VM agent
 
 ---
 
-## Explications des scripts
+## Architecture
 
-<details>
-<summary><u>server.sh</u></summary>
-<br>
-Dans la VM **server**, on exécute le script `server.sh` :
+Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM mère) contient les deux VM filles qui forment un cluster k3s. Le token de jointure transite par le dossier partagé `/vagrant` (NFS).
 
-- `curl -sfL https://get.k3s.io | sh -`  
-- On installe **Kubernetes (k3s)**, qui est une version légère de Kubernetes.  
-- On démarre le service **k3s**.
-
-Lors du démarrage de k3s, un **node token** est généré. Il est stocké dans : /var/lib/rancher/k3s/server/node-token
-
-
-Le script fait ensuite :  
-- Attend dans une boucle `while` que le token soit généré.  
-- Copie le token dans `/vagrant/token` (dossier partagé Vagrant, monté automatiquement entre la VM et la machine hôte).  
-- Rend `/vagrant/token` lisible par tous et donne les droits d’écriture à root.
-
-**Rôle du token :**  
-Le token permet à un **worker node** de rejoindre le cluster.  
-Le but est donc de rendre le token accessible pour permettre au worker node de se connecter au master node.
-
-</details>
-
-<details>
-<summary><u>worker.sh</u></summary>
-<br>
-Dans la VM **worker**, on exécute le script `worker.sh` :
-
-- On attend que le **token** généré depuis la VM server par le master node soit copié dans le dossier Vagrant accessible par tous.  
-- On exécute :  
-```bash
-curl -sfL https://get.k3s.io | K3S_URL=https://${SERVER_IP}:6443 K3S_TOKEN=${TOKEN} sh -
-```
-- On installe Kubernetes (k3s).
-- On démarre k3s en lui passant l'IP de la VM server et le token du master node.
-
-Ainsi, le worker node dans la VM worker est bien connecté au master node dans la VM server.
-
-</details>
-
-<details>
-<summary><u>Dossier partagé /vagrant et NFS</u></summary>
-<br>
-
-Le token K3s doit être **écrit** par le server et **lu** par l'agent. Pour cela, les deux VMs doivent accéder à un même dossier partagé : `/vagrant`.
-
-**Avec VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Guest Additions (vboxsf). Rien à configurer, ça fonctionne dans les deux sens (lecture/écriture).
-
-**Avec libvirt/KVM**, il n'y a **pas de Guest Additions**. Le dossier `/vagrant` n'est pas monté par défaut. Il faut le déclarer explicitement dans le Vagrantfile :
-
-```ruby
-node.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_udp: false
+```mermaid
+graph LR
+    subgraph vmProjet [VM Projet - Ubuntu / VB]
+        direction TB
+        server["malangloS - 192.168.56.110 - k3s Server"]
+        agent["malangloSW - 192.168.56.111 - k3s Agent"]
+        nfs["/vagrant - dossier partagé NFS"]
+    end
+    server -- "écrit le token" --> nfs
+    nfs -- "lit le token" --> agent
+    agent -- "rejoint le cluster via :6443" --> server
 ```
 
-**Pourquoi NFS et pas rsync ?**
+<p align="center">
+  <img src="../images/archi-1.png" alt="Archi Cluster" />
+</p>
 
-| Type | Direction | Usage |
-|------|-----------|-------|
-| **rsync** | Hôte → VM (copie à `vagrant up`) | Fichiers en lecture seule dans la VM |
-| **nfs** | **Bidirectionnel** (hôte ↔ VM, en temps réel) | Fichiers écrits/lus par les deux VMs |
 
-On a besoin de NFS car :
-1. `server.sh` **écrit** le token dans `/vagrant/token`
-2. `agent.sh` **lit** ce même token depuis `/vagrant/token`
-3. Les deux VMs doivent voir le même fichier via le dossier partagé de l'hôte
+Les pods applicatifs sont gérés dans l'agent node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
 
-Avec rsync, un fichier créé dans la VM resterait local à cette VM et ne serait jamais visible par l'autre.
+---
 
-**Prérequis** : un serveur NFS sur l'hôte :
-```bash
-sudo apt-get install -y nfs-kernel-server
-```
-
-</details>
+## Scripts
 
 <details>
-<summary><u>Adaptations pour libvirt/KVM (--node-ip, race condition)</u></summary>
+<summary><strong>server.sh</strong></summary>
 <br>
 
-Avec **VirtualBox**, chaque VM n'a qu'une interface réseau principale et k3s la prend par défaut. Avec **libvirt/KVM**, chaque VM a **deux interfaces** :
+Ce script est exécuté automatiquement dans la VM **server** lors du provisioning.
 
-- **eth0** : réseau NAT libvirt (`192.168.121.x`) — gestion SSH, accès internet
-- **eth1** : réseau privé Vagrant (`192.168.56.x`) — communication inter-VMs
+Il effectue les opérations suivantes :
 
-Par défaut, k3s utilise **eth0** (la première interface). Problème : le server s'annonce sur `192.168.121.x` et l'agent essaie de le joindre sur `192.168.56.110` → ça ne matche pas.
-
-**Flags ajoutés dans server.sh :**
+1. Il supprime un éventuel token résiduel (`rm -f /vagrant/token`) pour éviter qu'un ancien token ne soit lu par l'agent.
+2. Il installe k3s en mode server avec les flags réseau nécessaires. La variable d'environnement `INSTALL_K3S_EXEC` est lue par le script d'installation k3s et son contenu est passé comme arguments CLI au binaire k3s au démarrage :
 
 ```bash
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
@@ -128,72 +64,186 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
   --tls-san 192.168.56.110" sh -
 ```
 
-| Flag | Rôle |
-|------|------|
-| `--node-ip` | Force k3s à s'enregistrer avec cette IP dans `kubectl get nodes` |
-| `--advertise-address` | L'API server écoute et s'annonce sur cette IP (pas sur l'IP NAT) |
-| `--tls-san` | Ajoute cette IP comme nom valide dans le certificat TLS du server |
+3. Il attend dans une boucle que le **node token** soit généré par k3s (stocké dans `/var/lib/rancher/k3s/server/node-token`).
+4. Il copie ce token dans `/vagrant/token` (dossier partagé NFS) et le rend lisible par tous.
 
-**Flag ajouté dans agent.sh :**
+Le token est la clé qui permet à un agent node de rejoindre le cluster. En le plaçant dans `/vagrant`, il devient accessible depuis la VM agent.
+
+</details>
+
+<details>
+<summary><strong>agent.sh</strong></summary>
+<br>
+
+Ce script est exécuté automatiquement dans la VM **agent** lors du provisioning.
+
+Il effectue les opérations suivantes :
+
+1. Il attend que le fichier `/vagrant/token` existe (le server doit l'avoir écrit au préalable).
+2. Il attend que l'API server k3s soit accessible sur le port 6443 de la VM server :
 
 ```bash
-INSTALL_K3S_EXEC="--node-ip 192.168.56.111"
+while ! curl -sk --connect-timeout 2 "https://192.168.56.110:6443" >/dev/null 2>&1; do
+  sleep 3
+done
 ```
 
-L'agent s'annonce aussi avec la bonne IP dans le cluster.
+3. Il installe k3s en mode agent en lui passant l'URL du server et le token :
 
----
+```bash
+curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.110:6443 K3S_TOKEN=${TOKEN} \
+  INSTALL_K3S_EXEC="--node-ip 192.168.56.111" sh -
+```
 
-**Race condition avec libvirt :**
-
-Avec libvirt, les deux VMs démarrent **en parallèle** (contrairement à VirtualBox qui est séquentiel). Cela pose deux problèmes :
-
-1. **Token périmé** : le dossier `/vagrant` (NFS) peut contenir un token d'un `vagrant up` précédent. L'agent le trouve immédiatement et tente de rejoindre un cluster qui n'existe plus.
-   → **Fix** : `rm -f /vagrant/token` au début de `server.sh`
-
-2. **Server pas encore prêt** : l'agent trouve le token mais le server k3s n'est pas encore démarré sur le port 6443.
-   → **Fix** : boucle d'attente dans `agent.sh` avant d'installer :
-   ```bash
-   while ! curl -sk --connect-timeout 2 "https://${SERVER_IP}:6443" >/dev/null 2>&1; do
-     sleep 3
-   done
-   ```
+L'agent node est alors connecté au master node et apparaît dans `kubectl get nodes`.
 
 </details>
 
 ---
 
-## Récap
+## Dossier partagé /vagrant et NFS
 
-![Archi Cluster](../images/archi-1.png)
+Le token k3s doit être **écrit** par le server et **lu** par l'agent. Les deux VM doivent donc accéder à un même dossier partagé : `/vagrant`.
 
-![Server Worker](../images/k3s-server-worker.png)
+Avec **VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Guest Additions. Avec **libvirt/KVM**, il n'y a pas de Guest Additions. Il faut le déclarer explicitement dans le Vagrantfile :
 
-Les pods applicatifs sont censés être gérés dans le worker node
+```ruby
+node.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_udp: false
+```
+
+L'option `nfs_udp: false` force NFS à utiliser TCP au lieu d'UDP. NFSv4 ne supporte que TCP, ce qui évite des erreurs de montage avec certaines configurations libvirt.
+
+**Prérequis** : un serveur NFS sur l'hôte :
+
+```bash
+sudo apt-get install -y nfs-kernel-server
+```
+
+<details>
+<summary><strong>Qu'est-ce que NFS ?</strong></summary>
+<br>
+
+**NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
+
+</details>
+
+<details>
+<summary><strong>Pourquoi NFS ?</strong></summary>
+<br>
+
+NFS est nécessaire car le partage doit être **bidirectionnel et en temps réel** :
+
+1. `server.sh` **écrit** le token dans `/vagrant/token`
+2. `agent.sh` **lit** ce même token depuis `/vagrant/token`
+3. Les deux VM doivent voir le même fichier via le dossier partagé de l'hôte
+
+</details>
 
 ---
 
-## Réseau : interactions hôte / VMs
+## Réseau
 
-### Interfaces dans la VM : eth0 et eth1
+### Les deux interfaces réseau (eth0 / eth1)
 
-- **eth0** : interface NAT (créée par défaut par Vagrant/libvirt). Elle sert à l’accès Internet depuis la VM (apt, curl, etc.).
-- **eth1** : interface du **réseau privé** (voir ci-dessous). C’est elle qui porte l’IP fixe de la VM (ex. 192.168.56.110 pour le server). Le trafic entre les deux VMs (server ↔ agent) et l’accès à l’API K3s (ex. `https://192.168.56.110:6443`) passent par eth1.
+Avec **libvirt/KVM**, chaque VM possède deux interfaces réseau, chacune sur un réseau différent :
 
-En résumé : Internet via eth0 (NAT), cluster K3s et communication inter-VMs via eth1 (réseau privé).
+```mermaid
+graph TD
+    subgraph vmMere [VM Mere - Ubuntu]
+        subgraph server [malangloS]
+            eth0s["eth0 - 192.168.121.x"]
+            eth1s["eth1 - 192.168.56.110"]
+        end
+        subgraph agentVM [malangloSW]
+            eth0a["eth0 - 192.168.121.x"]
+            eth1a["eth1 - 192.168.56.111"]
+        end
+    end
+    eth0s -->|"apt, curl, DNS..."| inet["Internet"]
+    eth0a -->|"apt, curl, DNS..."| inet
+    eth1s <-->|"k3s API :6443 + token"| eth1a
+```
 
-### `node.vm.network :private_network, ip: machine[:ip]`
+| Interface | Réseau | IP | Rôle |
+|-----------|--------|----|------|
+| **eth0** | NAT libvirt (`192.168.121.0/24`) | Dynamique | Accès internet (apt, curl, téléchargement du binaire k3s...) |
+| **eth1** | Privé Vagrant (`192.168.56.0/24`) | Fixe | Communication inter-VM, API k3s (:6443), accès depuis l'hôte |
 
-Cette option crée un **réseau privé** libvirt entre l’hôte et les VMs. Chaque VM a une IP fixe sur ce réseau (192.168.56.110 pour le server, 192.168.56.111 pour l’agent). Cela permet :
+eth0 est créée automatiquement par libvirt. eth1 est créée par la directive suivante dans le Vagrantfile :
 
-- la communication **server ↔ agent** (jointure du worker au master K3s) ;
-- l’accès depuis l’hôte aux services exposés sur ces IP (ex. kubectl vers l’API K3s).
+```ruby
+node.vm.network :private_network, ip: machine[:ip]
+```
 
-### `node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"`
+### Pourquoi forcer k3s sur eth1
 
-Le **port forwarding** mappe le port SSH (22) **à l’intérieur** de chaque VM vers un port **sur l’hôte** (8080 pour malangloS, 8081 pour malangloSW). Comme les deux VMs ont chacune un service SSH sur le port 22, sans ports hôte différents on ne pourrait pas cibler une VM précise. Depuis l’hôte : `ssh -p 8080 ...` atteint le server, `ssh -p 8081 ...` atteint l’agent ; `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
+Par défaut, k3s s'enregistre sur la **première interface** qu'il trouve, c'est-à-dire eth0. Le server s'annonce alors sur `192.168.121.x` (NAT), mais l'agent essaie de le joindre sur `192.168.56.110` (réseau privé). Cela ne fonctionne pas.
 
-### Synthèse
+Les flags suivants forcent k3s à utiliser eth1 :
 
-Depuis l’**hôte**, on accède aux VMs en SSH via les ports forwardés (8080, 8081) ou `vagrant ssh`. Les **VMs** communiquent entre elles via le réseau privé (eth1, IP 192.168.56.x). Le token K3s est partagé via le dossier `/vagrant` monté par Vagrant entre l’hôte et chaque VM.
+| Flag | Utilisé dans | Rôle |
+|------|-------------|------|
+| `--node-ip` | server.sh + agent.sh | Force k3s à s'enregistrer avec l'IP du réseau privé dans `kubectl get nodes` |
+| `--advertise-address` | server.sh | L'API server écoute et s'annonce sur cette IP (pas sur l'IP NAT) |
+| `--tls-san` | server.sh | Ajoute cette IP comme nom valide dans le certificat TLS du server |
 
+### Port forwarding SSH
+
+Chaque VM a SSH sur le port 22. Pour y accéder depuis la VM mère, le port forwarding mappe des ports hôte différents vers chaque VM :
+
+```mermaid
+graph LR
+    port8080["VM Mere :8080"] -->|SSH| serverSSH["malangloS :22"]
+    port8081["VM Mere :8081"] -->|SSH| agentSSH["malangloSW :22"]
+```
+
+Cela correspond à cette ligne dans le Vagrantfile :
+
+```ruby
+node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"
+```
+
+Les commandes `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
+
+<details>
+<summary><strong>Race condition avec libvirt</strong></summary>
+<br>
+
+Avec libvirt, les deux VM démarrent **en parallèle** (contrairement à VirtualBox qui est séquentiel). Cela pose deux problèmes :
+
+1. **Token périmé** : le dossier `/vagrant` (NFS) peut contenir un token d'un `vagrant up` précédent. L'agent le trouve immédiatement et tente de rejoindre un cluster qui n'existe plus.
+   - **Solution** : `rm -f /vagrant/token` au début de `server.sh`
+
+2. **Server pas encore prêt** : l'agent trouve le token mais le server k3s n'est pas encore démarré sur le port 6443.
+   - **Solution** : boucle d'attente dans `agent.sh` qui teste la connexion au port 6443 avant de lancer l'installation.
+
+</details>
+
+---
+
+## CLI principales
+
+Les commandes ci-dessous sont à lancer depuis le répertoire contenant le Vagrantfile :
+
+```bash
+vagrant up                # Lance et provisionne les VM
+vagrant ssh malangloS     # Se connecter à la VM server
+vagrant ssh malangloSW    # Se connecter à la VM agent
+vagrant status            # Affiche l'état des VM (running, shutoff...)
+vagrant provision         # Re-provisionne les VM après modification d'un script
+vagrant halt              # Éteint proprement les VM (sans les supprimer)
+vagrant destroy -f        # Supprime complètement les VM
+```
+
+Depuis la VM server, on peut vérifier l'état du cluster :
+
+```bash
+kubectl get nodes         # Liste les noeuds du cluster (server + agent)
+kubectl get pods -A       # Liste tous les pods sur tous les namespaces
+```
+
+Pour lister toutes les VM libvirt (niveau hyperviseur) :
+
+```bash
+virsh list --all
+```
