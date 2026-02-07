@@ -35,7 +35,9 @@ graph LR
     agent -- "rejoint le cluster via :6443" --> server
 ```
 
-![Archi Cluster](../images/archi-1.png)
+<p align="center">
+  <img src="../images/archi-1.png" alt="Archi Cluster" />
+</p>
 
 
 Les pods applicatifs sont gérés dans l'agent node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
