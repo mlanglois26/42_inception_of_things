@@ -5,6 +5,8 @@ Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déploy
 - La **VM server** (`malangloS`) héberge le **master node** (control plane).
 - La **VM agent** (`malangloSW`) héberge un **agent node** qui rejoint le cluster du master.
 
+Le master node gère le cluster (API, scheduling, état) tandis que l'agent node exécute les workloads (pods/containers) qui lui sont assignés.
+
 ---
 
 ## Workflow
@@ -21,9 +23,9 @@ Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déploy
 Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM mère) contient les deux VM filles qui forment un cluster k3s. Le token de jointure transite par le dossier partagé `/vagrant` (NFS).
 
 ```mermaid
-graph TD
+graph LR
     subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
-
+        direction TB
         server["malangloS - 192.168.56.110 - k3s Server"]
         agent["malangloSW - 192.168.56.111 - k3s Agent"]
         nfs["/vagrant - dossier partagé NFS"]
@@ -35,7 +37,6 @@ graph TD
 
 ![Archi Cluster](../images/archi-1.png)
 
-![Server Agent k3s](../images/k3s-server-worker.png)
 
 Les pods applicatifs sont gérés dans l'agent node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
 
