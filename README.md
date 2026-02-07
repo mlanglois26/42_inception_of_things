@@ -1,15 +1,6 @@
 # 42_inception_of_things
 
-Le projet doit être réalisé dans une **VM**.
-On va créer des VM dans une VM. On va donc faire de la nested virtualization. (Donc on va avoir beson de pas mal de RAM et plusieurs processeurs).
-
-## Étapes à suivre
-
-- Set up une VM
-- Installer un hyperviseur pour pouvoir lancer des VMs dans la VM (l'option 'Enable Nested Paging' de la VM hôte doit être cochée pour permettre la nested virtualization).
-- Installer **Vagrant**
-
-Le projet a pour but de découvrir **K3s** avec **Vagrant** puis **K3d**.
+Le but de ce projet est de manipuler des machines virtuelles en local avec **Vagrant** et de se familiariser avec **Kubernetes** à travers **k3s** et **k3d**.
 
 ---
 
@@ -20,23 +11,8 @@ Le projet a pour but de découvrir **K3s** avec **Vagrant** puis **K3d**.
   <u>Qu'est-ce que Vagrant ?</u>
 
   Vagrant est un outil open-source qui permet de **déployer et gérer des machines virtuelles de manière reproductible**.  
-  Il facilite la création d’environnements de développement isolés et identiques sur différents systèmes.  
+  Il facilite la création d'environnements de développement isolés et identiques sur différents systèmes.  
   Grâce à Vagrant, on peut automatiser la configuration des VM, installer des logiciels et partager des environnements facilement.
-
-  <br>
-
-  <u>Problème récurrent :</u>
-
-  - Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur votre machine.
-  - Vérifiez avec la commande :  
-    ```bash
-    lsmod | grep kvm
-    ```
-  - Si des modules KVM sont présents, supprimez-les avant de continuer :  
-    ```bash
-    sudo rmmod kvm_intel
-    sudo rmmod kvm
-    ```
 
   <br>
 
@@ -89,8 +65,10 @@ En résumé, k3d est **k3s dans Docker**, parfait pour expérimenter ou dévelop
 ---
 
 <details>
-<summary>Configuration initiale de la VM</summary>
+<summary>Configuration de la VM mère</summary>
 <br>
+
+L'ensemble du projet tourne dans une **VM Ubuntu** créée à partir de **VirtualBox**. C'est la machine hôte dans laquelle on installe Vagrant, on lance les clusters k3s/k3d et on exécute toutes les commandes du projet.
 
 <u>1. Redimensionner l'écran (Guest Additions)</u>
 
@@ -148,5 +126,21 @@ sudo apt update
 sudo apt install -y vagrant
 ```
 
-</details>
+<u>5. Problème récurrent : modules KVM</u>
 
+Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur votre machine. Les modules KVM peuvent entrer en conflit avec VirtualBox.
+
+Vérifiez avec la commande :
+
+```bash
+lsmod | grep kvm
+```
+
+Si des modules KVM sont présents, supprimez-les avant de continuer :
+
+```bash
+sudo rmmod kvm_intel
+sudo rmmod kvm
+```
+
+</details>
