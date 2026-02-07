@@ -105,7 +105,7 @@ gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'fr')]"
 ### 4. Configurer une clé SSH pour GitHub
 
 ```bash
-ssh-keygen -t ed25519 -C "ton-email@example.com"
+ssh-keygen -t ed25519 -C "email@example.com"
 cat ~/.ssh/id_ed25519.pub
 ```
 
@@ -137,7 +137,7 @@ sudo apt install -y vagrant
 
 ### 6. Problème récurrent : modules KVM
 
-Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur ta machine. Les modules KVM peuvent entrer en conflit avec VirtualBox.
+Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur la machine. Les modules KVM peuvent entrer en conflit avec VirtualBox.
 
 On vérifie avec la commande suivante :
 
@@ -151,5 +151,73 @@ Si des modules KVM sont présents, on les supprime avant de continuer :
 sudo rmmod kvm_intel
 sudo rmmod kvm
 ```
+
+</details>
+
+---
+
+<details>
+<summary><strong>Configuration des VM filles (KVM / libvirt)</strong></summary>
+
+### Pourquoi KVM et pas VirtualBox ?
+
+Les VM filles (créées par Vagrant) n'utilisent pas VirtualBox mais **KVM/libvirt**. En contexte de nested virtualization (VM mère > VM filles), le choix du provider a un impact direct sur les performances :
+
+- **VirtualBox** est un hyperviseur de type 2 (logiciel complet au-dessus de l'OS). En nested, cela crée une double couche de virtualisation, ce qui est souvent très lent.
+- **KVM** est intégré directement au **noyau Linux**. Il est donc beaucoup plus proche du matériel et bien plus performant en nested virtualization.
+
+```
+Hôte physique (VT-x activé)
+└── VM mère (Ubuntu / VirtualBox)
+    ├── VirtualBox (type 2) → double couche, lent
+    └── KVM (noyau Linux)   → une seule couche, rapide
+```
+
+### Vagrant, libvirt, QEMU, KVM : qui fait quoi ?
+
+```
+Vagrant
+└── vagrant-libvirt (plugin)
+    └── libvirt (API / daemon)
+        └── QEMU + KVM (virtualisation)
+```
+
+| Composant | Rôle |
+|-----------|------|
+| **KVM** | Module du **noyau Linux**. Il transforme Linux en hyperviseur en utilisant les instructions CPU (VT-x). C'est lui qui fait tourner la VM à quasi-vitesse native. |
+| **QEMU** | **Émulateur matériel**. Il simule le hardware (carte réseau, disque, écran...) pour la VM. Sans KVM, QEMU émule tout (lent). Avec KVM, QEMU délègue le CPU au noyau et ne gère que le reste. |
+| **libvirt** | **API / daemon** (`libvirtd`). Couche d'abstraction qui pilote QEMU/KVM via une interface unifiée. `virsh`, `virt-manager` et le plugin Vagrant l'utilisent. |
+| **Vagrant** | **Orchestrateur CLI**. Il ne virtualise rien lui-même. Il appelle un **provider** (VirtualBox, libvirt, Docker...) pour créer/gérer les VM. Il gère aussi le provisioning (scripts), le réseau, les synced folders, SSH, etc. |
+
+### Installation (KVM / libvirt)
+
+Prérequis sur la VM mère (Ubuntu/Debian) :
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libvirt-dev libvirt-daemon-system qemu-kvm
+vagrant plugin install vagrant-libvirt
+```
+
+On peut ajouter l'utilisateur au groupe `libvirt` puis se reconnecter (ou `newgrp libvirt`) :
+
+```bash
+sudo usermod -aG libvirt $USER
+```
+
+On récupère la box (une seule fois) puis on lance la VM :
+
+```bash
+vagrant box add generic/debian12 --provider libvirt   # une seule fois
+vagrant up --provider=libvirt
+```
+
+Pour ne pas avoir à préciser `--provider=libvirt` à chaque fois, on peut définir le provider par défaut :
+
+```bash
+export VAGRANT_DEFAULT_PROVIDER=libvirt
+```
+
+On peut ajouter cette ligne dans le `~/.bashrc` pour que ce soit permanent.
 
 </details>
