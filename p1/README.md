@@ -24,7 +24,7 @@ Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM m
 
 ```mermaid
 graph LR
-    subgraph vmProjet [VM Projet - VirtualBox]
+    subgraph vmProjet [VM Projet - Ubuntu / VB]
         direction TB
         server["malangloS - 192.168.56.110 - k3s Server"]
         agent["malangloSW - 192.168.56.111 - k3s Agent"]
@@ -46,6 +46,7 @@ Les pods applicatifs sont gérés dans l'agent node. Le server node contient le 
 
 <details>
 <summary><strong>server.sh</strong></summary>
+<br>
 
 Ce script est exécuté automatiquement dans la VM **server** lors du provisioning.
 
@@ -70,6 +71,7 @@ Le token est la clé qui permet à un agent node de rejoindre le cluster. En le 
 
 <details>
 <summary><strong>agent.sh</strong></summary>
+<br>
 
 Ce script est exécuté automatiquement dans la VM **agent** lors du provisioning.
 
@@ -117,6 +119,7 @@ sudo apt-get install -y nfs-kernel-server
 
 <details>
 <summary><strong>Qu'est-ce que NFS ?</strong></summary>
+<br>
 
 **NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
 
@@ -124,6 +127,7 @@ sudo apt-get install -y nfs-kernel-server
 
 <details>
 <summary><strong>Pourquoi NFS ?</strong></summary>
+<br>
 
 NFS est nécessaire car le partage doit être **bidirectionnel et en temps réel** :
 
@@ -201,6 +205,7 @@ Les commandes `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce m
 
 <details>
 <summary><strong>Race condition avec libvirt</strong></summary>
+<br>
 
 Avec libvirt, les deux VM démarrent **en parallèle** (contrairement à VirtualBox qui est séquentiel). Cela pose deux problèmes :
 
