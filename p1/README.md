@@ -23,6 +23,7 @@ Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM m
 ```mermaid
 graph TD
     subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
+
         server["malangloS - 192.168.56.110 - k3s Server"]
         agent["malangloSW - 192.168.56.111 - k3s Agent"]
         nfs["/vagrant - dossier partagé NFS"]
@@ -32,12 +33,9 @@ graph TD
     agent -- "rejoint le cluster via :6443" --> server
 ```
 
-<table>
-<tr>
-<td><img src="../images/archi-1.png" alt="Archi Cluster" width="500"/></td>
-<td><img src="../images/k3s-server-worker.png" alt="Server Agent k3s" width="500"/></td>
-</tr>
-</table>
+![Archi Cluster](../images/archi-1.png)
+
+![Server Agent k3s](../images/k3s-server-worker.png)
 
 Les pods applicatifs sont gérés dans l'agent node. Le server node contient le control plane (API Server, Scheduler, Controller Manager, etc.).
 
@@ -53,7 +51,7 @@ Ce script est exécuté automatiquement dans la VM **server** lors du provisioni
 Il effectue les opérations suivantes :
 
 1. Il supprime un éventuel token résiduel (`rm -f /vagrant/token`) pour éviter qu'un ancien token ne soit lu par l'agent.
-2. Il installe k3s en mode server avec les flags réseau nécessaires :
+2. Il installe k3s en mode server avec les flags réseau nécessaires. La variable d'environnement `INSTALL_K3S_EXEC` est lue par le script d'installation k3s et son contenu est passé comme arguments CLI au binaire k3s au démarrage :
 
 ```bash
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="\
@@ -100,12 +98,6 @@ L'agent node est alors connecté au master node et apparaît dans `kubectl get n
 
 ## Dossier partagé /vagrant et NFS
 
-### Qu'est-ce que NFS ?
-
-**NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
-
-### Pourquoi un dossier partagé ?
-
 Le token k3s doit être **écrit** par le server et **lu** par l'agent. Les deux VM doivent donc accéder à un même dossier partagé : `/vagrant`.
 
 Avec **VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Guest Additions. Avec **libvirt/KVM**, il n'y a pas de Guest Additions. Il faut le déclarer explicitement dans le Vagrantfile :
@@ -114,26 +106,31 @@ Avec **VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Gu
 node.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_udp: false
 ```
 
-### Pourquoi NFS et pas rsync ?
-
-| Type | Direction | Usage |
-|------|-----------|-------|
-| **rsync** | Hôte vers VM (copie au `vagrant up`) | Fichiers en lecture seule dans la VM |
-| **nfs** | **Bidirectionnel** (hôte et VM, en temps réel) | Fichiers écrits/lus par les deux VM |
-
-NFS est nécessaire car :
-
-1. `server.sh` **écrit** le token dans `/vagrant/token`
-2. `agent.sh` **lit** ce même token depuis `/vagrant/token`
-3. Les deux VM doivent voir le même fichier via le dossier partagé de l'hôte
-
-Avec rsync, un fichier créé dans une VM resterait local à cette VM et ne serait jamais visible par l'autre.
+L'option `nfs_udp: false` force NFS à utiliser TCP au lieu d'UDP. NFSv4 ne supporte que TCP, ce qui évite des erreurs de montage avec certaines configurations libvirt.
 
 **Prérequis** : un serveur NFS sur l'hôte :
 
 ```bash
 sudo apt-get install -y nfs-kernel-server
 ```
+
+<details>
+<summary><strong>Qu'est-ce que NFS ?</strong></summary>
+
+**NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
+
+</details>
+
+<details>
+<summary><strong>Pourquoi NFS ?</strong></summary>
+
+NFS est nécessaire car le partage doit être **bidirectionnel et en temps réel** :
+
+1. `server.sh` **écrit** le token dans `/vagrant/token`
+2. `agent.sh` **lit** ce même token depuis `/vagrant/token`
+3. Les deux VM doivent voir le même fichier via le dossier partagé de l'hôte
+
+</details>
 
 ---
 
