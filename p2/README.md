@@ -15,9 +15,23 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
 <details>
   <summary>Schémas : architecture K3s d'un point de vue général</summary>
   <br>
-  
-  Cluster -> Node -> Pods -> Containers
-  <br>
+
+Hiérarchie k3s : Cluster > Node > Pod > Container
+
+```mermaid
+graph TD
+    subgraph cluster [Cluster]
+        subgraph node1 [Node]
+            subgraph pod1 [Pod]
+                c1[Container]
+            end
+            subgraph pod2 [Pod]
+                c2[Container]
+                c3[Container]
+            end
+        end
+    end
+```
 
   <table>
     <tr>
@@ -33,6 +47,32 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
   <summary>Schémas : architecture infra de l'exo 2</summary>
   <br>
 
+VM Projet > VM Exo 2 > Cluster k3s single-node :
+
+```mermaid
+graph TD
+    subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
+        subgraph vmExo2 ["VM Exo 2 - malangloS (192.168.56.110)"]
+            subgraph clusterK3s [Cluster k3s]
+                singleNode[Node unique - Server + Agent]
+            end
+        end
+    end
+```
+
+Détail du node avec les 5 pods :
+
+```mermaid
+graph TD
+    subgraph node [Node - malangloS]
+        podA1["pod app1 (1 replica)"]
+        podA2a["pod app2 (replica 1)"]
+        podA2b["pod app2 (replica 2)"]
+        podA2c["pod app2 (replica 3)"]
+        podA3["pod app3 (1 replica)"]
+    end
+```
+
   <table>
     <tr>
       <td><img src="../images/archi-2.png" alt="archi-2" width="800"/></td>
@@ -46,6 +86,21 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
 <details>
   <summary>Schémas : architecture network de l'exo 2</summary>
   <br>
+
+Flux complet : requête HTTP > Ingress Controller (Traefik) > Service > Pods
+
+```mermaid
+graph LR
+    req["Requête HTTP"] --> ingress["Ingress Controller - Traefik"]
+    ingress -->|"host: app1.com"| svc1["service app-1 :80"]
+    ingress -->|"host: app2.com"| svc2["service app-2 :80"]
+    ingress -->|"default"| svc3["service app-3 :80"]
+    svc1 --> podA1["pod app1"]
+    svc2 --> podA2a["pod app2"]
+    svc2 --> podA2b["pod app2"]
+    svc2 --> podA2c["pod app2"]
+    svc3 --> podA3["pod app3"]
+```
 
   <table>
     <tr>
@@ -165,6 +220,15 @@ Sans ConfigMap :
 
 Avec ConfigMap :
 - nginx → /usr/share/nginx/html → ton index.html
+
+Flux d'un fichier index.html depuis l'hôte jusqu'au container :
+
+```mermaid
+graph TD
+    code["Code sur la VM Projet"] -->|"synced_folder"| vm["VM Exo 2 : /apps, /ingress"]
+    vm -->|"kubectl create configmap"| cm["ConfigMap"]
+    cm -->|"volume spec dans deploy.yaml"| pod["Pod > Container > /usr/share/nginx/html/index.html"]
+```
 
 <table>
   <tr>
