@@ -72,7 +72,7 @@ L'ensemble du projet tourne dans une **VM Ubuntu** créée à partir de **Virtua
 
 <u>1. Redimensionner l'écran (Guest Additions)</u>
 
-Installer les dépendances puis les Guest Additions VirtualBox :
+Installe les dépendances puis les Guest Additions VirtualBox :
 
 ```bash
 sudo apt update
@@ -100,9 +100,9 @@ ssh-keygen -t ed25519 -C "ton-email@example.com"
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Copier la clé publique sur GitHub : **Settings → SSH and GPG keys → New SSH key**
+Copie la clé publique sur GitHub : **Settings → SSH and GPG keys → New SSH key**
 
-Tester la connexion :
+Teste la connexion :
 
 ```bash
 ssh -T git@github.com
@@ -128,15 +128,15 @@ sudo apt install -y vagrant
 
 <u>5. Problème récurrent : modules KVM</u>
 
-Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur votre machine. Les modules KVM peuvent entrer en conflit avec VirtualBox.
+Par défaut, il peut y avoir un gestionnaire de VM déjà installé sur ta machine. Les modules KVM peuvent entrer en conflit avec VirtualBox.
 
-Vérifiez avec la commande :
+Vérifie avec la commande :
 
 ```bash
 lsmod | grep kvm
 ```
 
-Si des modules KVM sont présents, supprimez-les avant de continuer :
+Si des modules KVM sont présents, supprime-les avant de continuer :
 
 ```bash
 sudo rmmod kvm_intel
