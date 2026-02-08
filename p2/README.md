@@ -93,6 +93,7 @@ graph TD
 
 ---
 
+
 ## Explication du code
 
 
@@ -300,7 +301,12 @@ Le Service relaie ensuite vers les pods via `targetPort` (défini dans le Servic
 
 ---
 
+
 ## Les CLI utiles
+
+<details>
+<summary><strong>Commandes</strong></summary>
+<br>
 
 - Récap des **objets Kubernetes** (workloads / réseau) :
 
@@ -363,100 +369,5 @@ curl -H "Host: app2.com" http://192.168.56.110
 http://192.168.56.110:30081  (NodePort de app2)
 ```
 
----
+</details>
 
-## Pourquoi KVM et pas VirtualBox ?
-
-En **nested virtualization** (VM mère → VM Vagrant), on a deux niveaux d'hyperviseurs. Le choix du provider change beaucoup les perfs :
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Hôte physique (nested VT-x activé)                              │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │  VM mère (ex. Ubuntu)                                      │   │
-│  │  ┌─────────────────────┐   ┌─────────────────────────────┐ │   │
-│  │  │ VirtualBox (type 2)  │   │ KVM (dans le noyau Linux)   │ │   │
-│  │  │ → 2e couche lourde  │   │ → 1 seule couche, léger     │ │   │
-│  │  │ → souvent lent      │   │ → nested KVM bien supporté  │ │   │
-│  │  └─────────────────────┘   └─────────────────────────────┘ │   │
-│  │           ❌ lent                        ✅ préféré          │   │
-│  └───────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-- **VirtualBox** = hyperviseur de type 2 (logiciel complet) → double couche en nested = souvent très lent.
-- **KVM** = intégré au noyau, conçu pour la virtualisation, nested KVM documenté et performant → on privilégie libvirt/KVM.
-
----
-
-## Vagrant, libvirt, QEMU, KVM : qui fait quoi ?
-
-```
-┌───────────────────────────────────────────────┐
-│  Vagrant                                       │
-│  → Orchestrateur CLI                           │
-│  → Gère le cycle de vie de la VM               │
-│    (create, up, ssh, destroy, provision...)     │
-│                                                │
-│  ┌───────────────────────────────────────────┐ │
-│  │  vagrant-libvirt (plugin)                  │ │
-│  │  → Fait le lien entre Vagrant et libvirt   │ │
-│  │                                            │ │
-│  │  ┌───────────────────────────────────────┐ │ │
-│  │  │  libvirt                               │ │ │
-│  │  │  → API / couche d'abstraction          │ │ │
-│  │  │  → Pilote les hyperviseurs (KVM, etc.) │ │ │
-│  │  │                                        │ │ │
-│  │  │  ┌──────────────────────────────────┐  │ │ │
-│  │  │  │  QEMU + KVM                      │  │ │ │
-│  │  │  │  → QEMU = émulateur matériel     │  │ │ │
-│  │  │  │  → KVM  = module noyau Linux     │  │ │ │
-│  │  │  │    (accélération hardware)        │  │ │ │
-│  │  │  └──────────────────────────────────┘  │ │ │
-│  │  └───────────────────────────────────────┘ │ │
-│  └───────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┘
-```
-
-| Composant | Rôle | Analogie |
-|-----------|------|----------|
-| **KVM** | Module du **noyau Linux**. Il transforme Linux en hyperviseur en utilisant les instructions CPU (VT-x). C'est lui qui fait tourner la VM à quasi-vitesse native. | Le moteur |
-| **QEMU** | **Émulateur matériel**. Il simule le hardware (carte réseau, disque, écran...) pour la VM. Sans KVM, QEMU émule tout (lent). Avec KVM, QEMU délègue le CPU au noyau et ne gère que le reste. | Le châssis |
-| **libvirt** | **API / daemon** (`libvirtd`). Couche d'abstraction qui pilote QEMU/KVM via une interface unifiée. `virsh`, `virt-manager` et le plugin Vagrant l'utilisent. | Le tableau de bord |
-| **Vagrant** | **Orchestrateur CLI**. Il ne virtualise rien lui-même. Il appelle un **provider** (VirtualBox, libvirt, Docker...) pour créer/gérer les VMs. Il gère aussi le provisioning (scripts), le réseau, les synced folders, SSH, etc. | Le pilote automatique |
-
----
-
-## Setup (KVM / libvirt)
-
-Prérequis sur la machine qui lance Vagrant (Ubuntu/Debian) :
-
-```bash
-sudo apt-get update
-sudo apt-get install -y libvirt-dev libvirt-daemon-system qemu-kvm
-vagrant plugin install vagrant-libvirt
-```
-
-Optionnel : ajouter son utilisateur au groupe `libvirt` puis se reconnecter (ou `newgrp libvirt`) :
-
-```bash
-sudo usermod -aG libvirt $USER
-```
-
-Récupérer la box (une fois) puis lancer la VM :
-
-```bash
-cd p2
-vagrant box add generic/debian12 --provider libvirt   # une seule fois
-vagrant up --provider=libvirt
-```
-
-**Faut-il préciser le provider à chaque fois ?**  
-Oui, sauf si tu fixes le provider par défaut. Pour ne plus avoir à mettre `--provider=libvirt` :
-
-```bash
-export VAGRANT_DEFAULT_PROVIDER=libvirt
-vagrant up
-```
-
-Tu peux ajouter `export VAGRANT_DEFAULT_PROVIDER=libvirt` dans ton `~/.bashrc` si tu restes toujours sur libvirt pour ce projet.
