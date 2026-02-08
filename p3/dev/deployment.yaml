@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: my-app
-        image: wil42/playground:v1 # juste a mettre v1 et push
+        image: wil42/playground:v2
         ports:
         - containerPort: 8888
