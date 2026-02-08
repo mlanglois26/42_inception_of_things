@@ -4,15 +4,39 @@
 
 Le but de l'exo est d'utiliser :
 
-- k3d, c'est à dire Kubernetes dans Docker
-- ArgoCD, c'est à dire un GitOps controller
-
-k3d qui est un moyen de lancer un cluster kubernetes local dans des containeurs Docker. Le kube-apiserver et les nodes tournent dans des containers Docker. 
+- **k3d** : un moyen de lancer un cluster Kubernetes local dans des conteneurs Docker. Le kube-apiserver et les nodes tournent dans des containers Docker.
+- **ArgoCD** : un GitOps controller pour Kubernetes.
 
 L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
  - argocd-server (UI/API)
  - argocd-repo-server
- argocd-application-controller
+ - argocd-application-controller
+
+### Workflow entre les namespaces argocd et dev
+
+```mermaid
+graph LR
+    GitHub["GitHub\np3/dev/"]
+
+    subgraph ns_argocd ["Namespace argocd"]
+        controller["application-controller"]
+        repo["repo-server"]
+        server["argocd-server\n:443"]
+    end
+
+    subgraph ns_dev ["Namespace dev"]
+        pod["Pod my-app\n:8888"]
+        svc["Service my-app\n:80"]
+    end
+
+    controller -->|"1. clone repo"| repo
+    repo -->|"2. lit les manifests"| GitHub
+    controller -->|"3. apply dans dev"| ns_dev
+    svc -->|"targetPort 8888"| pod
+
+    localhost8080["localhost:8080"] -->|"port-forward"| server
+    localhost8888["localhost:8888"] -->|"port-forward"| svc
+```
 
 ---
 
@@ -83,8 +107,12 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   ```bash
   curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
   ```
-  Si le cluster existe déjà, on le supprime. Sinon on le créer avec un node server et un node agent
-  -- wait pour bloquer la commande et attendre que le cluster soit prêt avant le lancer les objets Kubernetes
+  Si le cluster existe déjà, on le supprime :
+  ```bash
+  k3d cluster list | grep -q "$CLUSTER_NAME" && k3d cluster delete $CLUSTER_NAME
+  ```
+  Puis on le crée avec un node server et un node agent.
+  `--wait` bloque la commande et attend que le cluster soit prêt avant de lancer les objets Kubernetes :
   ```bash
   k3d cluster create $CLUSTER_NAME --servers 1 --agents 1 --wait
   ```
@@ -95,7 +123,7 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   <br>
 
   - Un namespace, c'est une isolation logique pour organiser les ressources
-  - Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes (c'est Kubernetes qui gère l'ordonnance)
+  - Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes (c'est Kubernetes qui gère l'ordonnancement)
 
   💡 Bonnes pratiques :
 
@@ -108,7 +136,13 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
       <td><img src="../images/namespace.png" alt="namespace"/></td>
     </tr>
   </table>
- 
+
+  Dans `init.sh`, on crée deux namespaces via leurs fichiers YAML :
+  ```bash
+  kubectl apply -f dev/namespace.yaml      # namespace "dev" pour l'application
+  kubectl apply -f argocd/namespace.yaml   # namespace "argocd" pour Argo CD
+  ```
+
 </details>
 
 <details>
@@ -125,7 +159,7 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
     - Si un pod est supprimé manuellement → Argo CD peut le recréer automatiquement
     - Si tu modifies un manifeste dans Git → Argo CD met à jour ton cluster
     <br>
-    💡 Donc en gros, Kubernetes obéit à Git. Plus besoin de `kubectl apply` les `deployements`, les `services` et les `ingress` à la main
+    💡 Donc en gros, Kubernetes obéit à Git. Plus besoin de `kubectl apply` les `deployments`, les `services` et les `ingress` à la main
 
 <br>
 
@@ -144,10 +178,38 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
 
 <br>
 
+- <u>Installation dans init.sh</u>
+
+  On installe ArgoCD via le manifest officiel avec `--server-side=true` (nécessaire car certaines CRDs dépassent la taille max d'annotation côté client) :
+  ```bash
+  kubectl apply -n argocd --server-side=true -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  ```
+
+  Cette seule commande crée tout ce qu'il faut dans le namespace `argocd` :
+
+  ```mermaid
+  graph LR
+      subgraph ns_argocd ["Namespace argocd - cree par install.yaml"]
+          server["argocd-server\nUI + API"]
+          repo["argocd-repo-server\nclone les repos Git"]
+          controller["argocd-application-controller\nboucle watch + sync"]
+      end
+  ```
+
+  En plus des pods, le manifest installe aussi :
+  - Les **CRDs** → apprennent à Kubernetes ce qu'est un objet `Application`
+  - Les **RBAC** → donnent au controller les droits de créer des ressources dans n'importe quel namespace
+  - Les **Services, ConfigMaps, Secrets** → config interne + mot de passe admin
+
+  > 💡 Le comportement "auto-heal" (recréer un pod supprimé manuellement, corriger une dérive) n'est pas activé par défaut dans ArgoCD.
+  > C'est le `syncPolicy.automated` avec `selfHeal: true` et `prune: true` dans l'`Application.yaml` qui l'active.
+
+<br>
+
 - <u>Accéder à l'UI ArgoCD</u>
 
   Attends que le pod UI (argocd-server) soit prêt avec :
-  ```ruby
+  ```bash
   kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
   ```
   
@@ -158,8 +220,8 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   L'UI sera sur ***http://localhost:8080***
 
 
-  Pour s'y connecter, ArgoCD créer automatiquement un mot de passe admin initial
-  Il le stock dans un secret Kubernetes intitulé ***argocd-initial-admin-secret***, il faut donc le récupérer avec :
+  Pour s'y connecter, ArgoCD crée automatiquement un mot de passe admin initial.
+  Il le stocke dans un secret Kubernetes intitulé ***argocd-initial-admin-secret***, il faut donc le récupérer avec :
   ```bash
   kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
   ```
@@ -169,42 +231,122 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
 
 ---
 
-### Run.sh et connexion des ports
+### Le flow complet : init.sh → run.sh
+
+```mermaid
+sequenceDiagram
+    participant User as Utilisateur
+    participant Init as init.sh
+    participant K3D as Cluster k3d
+    participant ArgoCD as ArgoCD
+    participant Run as run.sh
+    participant GitHub as GitHub Repo
+    participant DevNS as Namespace dev
+
+    Note over Init: Phase 1 - Setup
+    User->>Init: ./init.sh
+    Init->>K3D: k3d cluster create (1 server + 1 agent)
+    Init->>K3D: kubectl apply namespace dev
+    Init->>K3D: kubectl apply namespace argocd
+    Init->>ArgoCD: kubectl apply install.yaml dans ns argocd
+    Note over ArgoCD: ArgoCD tourne mais ne surveille rien encore
+
+    Note over Run: Phase 2 - Deploiement
+    User->>Run: ./run.sh
+    Run->>ArgoCD: kubectl apply application.yaml
+    Note over ArgoCD: "Ok, je dois surveiller p3/dev sur GitHub"
+    ArgoCD->>GitHub: clone + watch (branch main, path p3/dev)
+    GitHub-->>ArgoCD: deployment.yaml, service.yaml
+    ArgoCD->>DevNS: apply les manifests
+    Note over DevNS: Pod my-app + Service sont créés
+    Run->>DevNS: kubectl wait pod my-app Ready
+
+    Note over Run: Phase 3 - Tunnels
+    Run->>ArgoCD: port-forward 8080:443
+    Run->>DevNS: port-forward 8888:80
+    Note over User: localhost:8080 = ArgoCD UI
+    Note over User: localhost:8888 = my-app
+```
+
+---
+
+### Run.sh
 
 <details>
-  <summary>Comment les ports sont connectés</summary>
+  <summary>Ce que fait run.sh étape par étape</summary>
   <br>
 
-  Le cluster k3d tourne dans Docker. Les services Kubernetes ne sont pas directement accessibles depuis la machine hôte. On utilise `kubectl port-forward` pour créer un tunnel entre un port local et un service du cluster.
+  **Etape 1 — Appliquer `application.yaml`**
 
-  ```
-  Machine hôte                Cluster k3d (Docker)
-  ─────────────               ────────────────────────────────
-
-  localhost:8080  ──tunnel──▶  svc/argocd-server:443  ──▶  pod argocd-server
-  localhost:8888  ──tunnel──▶  svc/my-app:80          ──▶  pod my-app:8888
+  ```bash
+  kubectl apply -f argocd/application.yaml
   ```
 
-  | Port local | Service Kubernetes | Port du service | Port du conteneur | Accès |
+  C'est la commande clé. Elle crée un objet `Application` dans ArgoCD (voir section suivante). A partir de là, ArgoCD prend le relais : il va sur GitHub, lit les manifests dans `p3/dev/`, et les applique dans le namespace `dev`.
+
+  **Etape 2 — Attendre que le pod soit prêt**
+
+  ```bash
+  kubectl wait --for=condition=Ready pod -l app=my-app -n dev --timeout=120s
+  ```
+
+  ArgoCD a besoin de quelques secondes pour cloner le repo, lire les manifests et créer le pod. On attend qu'il soit `Ready` avant d'ouvrir les tunnels.
+
+  **Etape 3 — Ouvrir les tunnels**
+
+  Le cluster k3d tourne dans Docker. Les services Kubernetes ne sont pas directement accessibles depuis la machine hôte. On utilise `kubectl port-forward` pour créer un tunnel :
+
+  ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8080:443 &   # ArgoCD UI
+  kubectl port-forward svc/my-app -n dev 8888:80 &              # Application
+  ```
+
+  | Port local | Service | Port du service | Cible dans le pod | Accès |
   |---|---|---|---|---|
-  | 8080 | `svc/argocd-server` (namespace argocd) | 443 | 8080 | http://localhost:8080 |
-  | 8888 | `svc/my-app` (namespace dev) | 80 | 8888 | http://localhost:8888 |
+  | 8080 | `svc/argocd-server` (ns argocd) | 443 | argocd-server | http://localhost:8080 |
+  | 8888 | `svc/my-app` (ns dev) | 80 → targetPort 8888 | my-app (wil42/playground) | http://localhost:8888 |
 
-  - **`svc/my-app` port 80 → targetPort 8888** : le Service écoute sur le port 80 et redirige vers le port 8888 du conteneur (celui sur lequel l'image `wil42/playground` écoute)
-  - **`port-forward 8888:80`** : mappe le port 8888 de la machine hôte vers le port 80 du Service
-
-  `run.sh` lance les deux port-forwards en arrière-plan. `Ctrl+C` les stoppe.
+  `Ctrl+C` stoppe les deux port-forwards.
 </details>
 
 ---
 
 ### Application.yaml
 
-C'est un objet ArgoCD
-Contrairement au deployment, service et à l'ingress qui sont des objets Kubernetes.
-Donc le application.yaml ne créer pas de pods
-a verifier ça 
+<details>
+  <summary>C'est quoi cet objet ?</summary>
+  <br>
 
-Son rôle, c'est de dire à ArgoCD, observe ce repo git et applique tout ce qui est là dans le cluster
+  `application.yaml` n'est **pas** un objet Kubernetes natif (contrairement au Deployment, Service, Ingress).
+  C'est un **CRD** (Custom Resource Definition) ajouté par ArgoCD quand on l'a installé.
 
-Un manifest = un objet au sens kubernetes
+  Il ne crée **aucun pod** directement. Son rôle, c'est de dire à ArgoCD :
+
+  > "Surveille ce repo Git, ce dossier, cette branche. Tout ce que tu trouves dedans, applique-le dans ce namespace."
+
+  ```yaml
+  source:
+    repoURL: https://github.com/mlanglois26/42_inception_of_things.git
+    targetRevision: main       # branche à surveiller
+    path: p3/dev               # dossier contenant les manifests
+  ```
+
+  ArgoCD va y trouver 2 manifests :
+  - `deployment.yaml` → crée le pod `my-app` (image `wil42/playground:v1`)
+  - `service.yaml` → expose le pod sur le port 80 (targetPort 8888)
+
+  ```yaml
+  destination:
+    server: https://kubernetes.default.svc   # le cluster local
+    namespace: dev                            # où déployer
+  ```
+
+  ```yaml
+  syncPolicy:
+    automated:
+      prune: true       # si un manifest est supprimé de Git → la ressource est supprimée du cluster
+      selfHeal: true    # si quelqu'un modifie un pod à la main → ArgoCD le remet comme dans Git
+  ```
+
+  💡 C'est grâce à `automated` + `selfHeal` + `prune` qu'ArgoCD fait du vrai GitOps : Git est la source de vérité, le cluster s'aligne en permanence.
+</details>
