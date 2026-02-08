@@ -12,6 +12,57 @@ L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
  - argocd-repo-server
  - argocd-application-controller
 
+### Architecture
+
+```mermaid
+graph TB
+    subgraph Host["Machine hote"]
+        direction TB
+        Docker["Docker Engine"]
+        kubectl["kubectl"]
+
+        subgraph K3D["Cluster k3d IOT-cluster"]
+            direction TB
+
+            subgraph ServerNode["Server Node - container Docker"]
+                KubeAPI["kube-apiserver"]
+            end
+
+            subgraph AgentNode["Agent Node - container Docker"]
+                direction TB
+
+                subgraph NSargocd["Namespace argocd"]
+                    argoServer["argocd-server :443"]
+                    argoRepo["argocd-repo-server"]
+                    argoController["argocd-application-controller"]
+                end
+
+                subgraph NSdev["Namespace dev"]
+                    DeployMyApp["Deployment my-app"]
+                    PodMyApp["Pod my-app :8888"]
+                    SvcMyApp["Service my-app :80"]
+                end
+            end
+        end
+    end
+
+    GitHub["GitHub Repo - mlanglois26/42_inception_of_things - branch main, path p3/dev"]
+    Browser["Navigateur"]
+
+    argoController -->|"watch + sync"| GitHub
+    GitHub -.->|"deployment.yaml, service.yaml, ingress.yaml"| argoController
+    argoController -->|"apply manifests"| NSdev
+
+    DeployMyApp --> PodMyApp
+    SvcMyApp -->|"targetPort 8888"| PodMyApp
+
+    Browser -->|"localhost:8080"| argoServer
+    Browser -->|"localhost:8888"| SvcMyApp
+
+    kubectl -->|"port-forward 8080:443"| argoServer
+    kubectl -->|"port-forward 8888:80"| SvcMyApp
+```
+
 ---
 
 ### Prérequis : Docker & kubectl
@@ -104,6 +155,12 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   - Namespaces → utiliser pour organiser, isoler, gérer les droits d’accès et quotas
   - Nodes → dimensionner selon le nombre de pods, la charge, la résilience
   - Ne pas créer un node pour chaque namespace → ça devient inutile et compliqué à gérer
+
+  <table>
+    <tr>
+      <td><img src="../images/namespace.png" alt="namespace"/></td>
+    </tr>
+  </table>
 
   Dans `init.sh`, on crée deux namespaces via leurs fichiers YAML :
   ```bash
