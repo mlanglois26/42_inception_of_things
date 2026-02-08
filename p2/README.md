@@ -129,7 +129,7 @@ server.vm.network :private_network, ip: "192.168.56.110"
 **forwarded_port** -- mappe un port de l'hôte vers la VM :
 
 ```ruby
-server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
+server.vm.network :forwarded_port, guest: 22, host: "8082", id: "ssh"
 ```
 
 - Redirige le port 8082 de l'hôte vers le port 22 de la VM
@@ -142,9 +142,9 @@ server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
 
 `private_network` donne une **IP fixe** à la VM sur un réseau privé. On accède à la VM directement par son IP. `forwarded_port` ne crée pas d'IP, il **redirige un port** de l'hôte vers la VM. C'est utile quand on veut accéder à un service précis (ici SSH) sans connaître l'IP de la VM.
 
-**Pourquoi la syntaxe est différente ?** (`:private_network` vs `"forwarded_port"`)
+**Note sur la syntaxe Ruby :**
 
-C'est du Ruby. `:private_network` est un **symbole** et `"forwarded_port"` est un **string**. Les deux sont interchangeables ici, Vagrant accepte les deux formes. On pourrait écrire `"private_network"` ou `:forwarded_port`, ça fonctionnerait pareil.
+Les deux types réseau utilisent la notation **symbole** (`:private_network`, `:forwarded_port`). En Ruby, un symbole (préfixé par `:`) est un identifiant léger et immuable. Vagrant accepte aussi la forme string (`"forwarded_port"`), les deux sont interchangeables.
 </details>
 
 <details>

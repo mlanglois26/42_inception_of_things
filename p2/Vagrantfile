@@ -6,7 +6,7 @@ Vagrant.configure("2") do |config|
     server.vm.hostname = "malangloS"
     server.vm.boot_timeout = 600
     server.vm.network :private_network, ip: "192.168.56.110"
-    server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
+    server.vm.network :forwarded_port, guest: 22, host: "8082", id: "ssh"
     server.vm.synced_folder "./apps", "/apps"
     server.vm.synced_folder "./ingress", "/ingress"
 
