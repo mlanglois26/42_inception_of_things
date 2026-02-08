@@ -25,8 +25,8 @@ graph LR
     end
 
     subgraph ns_dev ["Namespace dev"]
-        pod["Pod my-app\n:8888"]
-        svc["Service my-app\n:80"]
+        pod["Pod playground-container\n:8888"]
+        svc["Service playground-svc\n:80"]
     end
 
     controller -->|"1. clone repo"| repo
@@ -258,14 +258,14 @@ sequenceDiagram
     ArgoCD->>GitHub: clone + watch (branch main, path p3/dev)
     GitHub-->>ArgoCD: deployment.yaml, service.yaml
     ArgoCD->>DevNS: apply les manifests
-    Note over DevNS: Pod my-app + Service sont créés
-    Run->>DevNS: kubectl wait pod my-app Ready
+    Note over DevNS: Pod playground + Service sont créés
+    Run->>DevNS: kubectl wait pod playground Ready
 
     Note over Run: Phase 3 - Tunnels
     Run->>ArgoCD: port-forward 8080:443
     Run->>DevNS: port-forward 8888:80
     Note over User: localhost:8080 = ArgoCD UI
-    Note over User: localhost:8888 = my-app
+    Note over User: localhost:8888 = playground
 ```
 
 ---
@@ -287,24 +287,54 @@ sequenceDiagram
   **Etape 2 — Attendre que le pod soit prêt**
 
   ```bash
-  kubectl wait --for=condition=Ready pod -l app=my-app -n dev --timeout=120s
+  kubectl wait --for=condition=Ready pod -l app=playground -n dev --timeout=120s
   ```
 
-  ArgoCD a besoin de quelques secondes pour cloner le repo, lire les manifests et créer le pod. On attend qu'il soit `Ready` avant d'ouvrir les tunnels.
+  ArgoCD a besoin de quelques secondes pour cloner le repo, lire les manifests et créer le pod. `kubectl wait` ne sait attendre qu'une ressource **existante** devienne Ready — il échoue avec `no matching resources found` si le pod n'existe pas encore. C'est pour cette raison que le script attend d'abord la **création** du pod (boucle `until`) avant d'attendre qu'il soit **prêt** (`kubectl wait`).
 
   **Etape 3 — Ouvrir les tunnels**
 
-  Le cluster k3d tourne dans Docker. Les services Kubernetes ne sont pas directement accessibles depuis la machine hôte. On utilise `kubectl port-forward` pour créer un tunnel :
+  Le cluster k3d tourne dans Docker. Les services Kubernetes ne sont pas directement accessibles depuis la machine hôte. On utilise `kubectl port-forward` pour créer un tunnel entre la VM mère et un Service à l'intérieur du cluster :
 
   ```bash
   kubectl port-forward svc/argocd-server -n argocd 8080:443 &   # ArgoCD UI
-  kubectl port-forward svc/my-app -n dev 8888:80 &              # Application
+  kubectl port-forward svc/playground-svc -n dev 8888:80 &       # Application
   ```
+
+  La syntaxe est : `kubectl port-forward svc/<nom-du-service> -n <namespace> <port-local>:<port-du-service>`
 
   | Port local | Service | Port du service | Cible dans le pod | Accès |
   |---|---|---|---|---|
   | 8080 | `svc/argocd-server` (ns argocd) | 443 | argocd-server | http://localhost:8080 |
-  | 8888 | `svc/my-app` (ns dev) | 80 → targetPort 8888 | my-app (wil42/playground) | http://localhost:8888 |
+  | 8888 | `svc/playground-svc` (ns dev) | 80 → targetPort 8888 | playground-container (wil42/playground) | http://localhost:8888 |
+
+  Le port local (8888) est un choix arbitraire — c'est le port sur lequel on fait `curl localhost:8888` depuis la VM mère. Le Service traduit ensuite `80 → 8888` via son `targetPort` pour atteindre le container.
+
+  ```mermaid
+  graph LR
+      subgraph vmMere ["VM Mère (localhost)"]
+          browser8080["localhost:8080"]
+          browser8888["localhost:8888"]
+      end
+
+      subgraph docker ["Docker (k3d)"]
+          subgraph cluster ["Cluster K3s"]
+              subgraph nsArgocd ["namespace: argocd"]
+                  argoSvc["argocd-server :443"]
+                  argoPod["Pod Argo CD UI"]
+              end
+              subgraph nsDev ["namespace: dev"]
+                  svc["playground-svc :80"]
+                  pod["Pod playground-container :8888"]
+              end
+          end
+      end
+
+      browser8080 -->|"port-forward"| argoSvc
+      argoSvc --> argoPod
+      browser8888 -->|"port-forward"| svc
+      svc -->|"targetPort"| pod
+  ```
 
   `Ctrl+C` stoppe les deux port-forwards.
 </details>
@@ -332,8 +362,8 @@ sequenceDiagram
   ```
 
   ArgoCD va y trouver 2 manifests :
-  - `deployment.yaml` → crée le pod `my-app` (image `wil42/playground:v1`)
-  - `service.yaml` → expose le pod sur le port 80 (targetPort 8888)
+  - `deployment.yaml` → crée le Deployment `playground-depl` et ses pods (image `wil42/playground:v1`)
+  - `service.yaml` → expose les pods via le Service `playground-svc` sur le port 80 (targetPort 8888)
 
   ```yaml
   destination:
