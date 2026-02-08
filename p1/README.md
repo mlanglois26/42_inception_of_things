@@ -2,8 +2,8 @@
 
 Le but du premier exercice est de lancer **deux VM** avec Vagrant et d'y déployer un cluster k3s :
 
-- La **VM server** (`malangloS`) héberge le **master node** (control plane).
-- La **VM agent** (`malangloSW`) héberge un **agent node** qui rejoint le cluster du master.
+- La **VM server** (`matorgueS`) héberge le **master node** (control plane).
+- La **VM agent** (`matorgueSW`) héberge un **agent node** qui rejoint le cluster du master.
 
 Le master node gère le cluster (API, scheduling, état) tandis que l'agent node exécute les workloads (pods/containers) qui lui sont assignés.
 
@@ -26,8 +26,8 @@ Le schéma ci-dessous résume l'infrastructure de l'exercice. La VM projet (VM m
 graph LR
     subgraph vmProjet [VM Projet - Ubuntu / VB]
         direction TB
-        server["malangloS - 192.168.56.110 - k3s Server"]
-        agent["malangloSW - 192.168.56.111 - k3s Agent"]
+        server["matorgueS - 192.168.56.110 - k3s Server"]
+        agent["matorgueSW - 192.168.56.111 - k3s Agent"]
         nfs["/vagrant - dossier partagé NFS"]
     end
     server -- "écrit le token" --> nfs
@@ -108,8 +108,10 @@ Le token k3s doit être **écrit** par le server et **lu** par l'agent. Les deux
 Avec **VirtualBox**, le dossier `/vagrant` est monté automatiquement via les Guest Additions. Avec **libvirt/KVM**, il n'y a pas de Guest Additions. Il faut le déclarer explicitement dans le Vagrantfile :
 
 ```ruby
-node.vm.synced_folder ".", "/vagrant", type: "nfs", nfs_udp: false
+node.vm.synced_folder "shared", "/vagrant", type: "nfs", nfs_udp: false
 ```
+
+Cette ligne signifie : le dossier local `p1/shared/` (sur l'hôte) est monté sur `/vagrant` à l'intérieur des deux VM. Seul le contenu de `shared/` est exposé aux VM, pas l'intégralité du répertoire `p1/`.
 
 L'option `nfs_udp: false` force NFS à utiliser TCP au lieu d'UDP. NFSv4 ne supporte que TCP, ce qui évite des erreurs de montage avec certaines configurations libvirt.
 
@@ -124,6 +126,34 @@ sudo apt-get install -y nfs-kernel-server
 <br>
 
 **NFS** (Network File System) est un protocole qui permet de partager des dossiers entre plusieurs machines via le réseau. Une machine exporte un répertoire, et les autres le montent comme s'il était local. Les lectures et écritures sont synchronisées en temps réel.
+
+</details>
+
+<details>
+<summary><strong>Comment fonctionne le partage NFS dans ce projet ?</strong></summary>
+<br>
+
+L'hôte (VM mère) joue le rôle de **serveur NFS** grâce au paquet `nfs-kernel-server`. Les VM filles sont des **clients NFS** qui montent le partage distant.
+
+Concrètement, lors du `vagrant up`, Vagrant effectue automatiquement les opérations suivantes :
+
+1. Il ajoute une entrée dans **`/etc/exports`** sur l'hôte pour exporter le dossier `p1/shared/`. Ce fichier est la configuration centrale de NFS : il liste les répertoires partagés et les machines autorisées à y accéder.
+2. Il redémarre le service NFS sur l'hôte (c'est pour cette raison que Vagrant demande le mot de passe `sudo` au démarrage).
+3. Il configure un **montage NFS** dans chaque VM fille, créant le point de montage `/vagrant` qui pointe vers `p1/shared/` via le réseau.
+
+Au `vagrant destroy`, Vagrant nettoie l'entrée dans `/etc/exports`.
+
+Le résultat est un partage **bidirectionnel** : tout fichier écrit dans `/vagrant` depuis une VM apparaît immédiatement dans `p1/shared/` sur l'hôte, et réciproquement. Les deux VM voient le même contenu car elles montent le même dossier distant.
+
+```
+Hôte (nfs-kernel-server)              VM fille (client NFS)
+                                       matorgueS
+p1/shared/  ──── exporte via NFS ───►  /vagrant/
+                                       matorgueSW
+                                        /vagrant/
+```
+
+L'hôte sert donc de **relais NFS** entre les deux VM. Le server écrit le token dans `/vagrant/token`, il apparaît dans `p1/shared/token` sur l'hôte, et l'agent le lit depuis son propre `/vagrant/token`.
 
 </details>
 
@@ -150,11 +180,11 @@ Avec **libvirt/KVM**, chaque VM possède deux interfaces réseau, chacune sur un
 ```mermaid
 graph TD
     subgraph vmMere [VM Mere - Ubuntu]
-        subgraph server [malangloS]
+        subgraph server [matorgueS]
             eth0s["eth0 - 192.168.121.x"]
             eth1s["eth1 - 192.168.56.110"]
         end
-        subgraph agentVM [malangloSW]
+        subgraph agentVM [matorgueSW]
             eth0a["eth0 - 192.168.121.x"]
             eth1a["eth1 - 192.168.56.111"]
         end
@@ -193,17 +223,17 @@ Chaque VM a SSH sur le port 22. Pour y accéder depuis la VM mère, le port forw
 
 ```mermaid
 graph LR
-    port8080["VM Mere :8080"] -->|SSH| serverSSH["malangloS :22"]
-    port8081["VM Mere :8081"] -->|SSH| agentSSH["malangloSW :22"]
+    port8080["VM Mere :8080"] -->|SSH| serverSSH["matorgueS :22"]
+    port8081["VM Mere :8081"] -->|SSH| agentSSH["matorgueSW :22"]
 ```
 
 Cela correspond à cette ligne dans le Vagrantfile :
 
 ```ruby
-node.vm.network "forwarded_port", guest: 22, host: machine[:ssh_port], id: "ssh"
+node.vm.network :forwarded_port, guest: 22, host: machine[:ssh_port], id: "ssh"
 ```
 
-Les commandes `vagrant ssh malangloS` et `vagrant ssh malangloSW` utilisent ce mapping en interne.
+Les commandes `vagrant ssh matorgueS` et `vagrant ssh matorgueSW` utilisent ce mapping en interne.
 
 <details>
 <summary><strong>Race condition avec libvirt</strong></summary>
@@ -227,8 +257,8 @@ Les commandes ci-dessous sont à lancer depuis le répertoire contenant le Vagra
 
 ```bash
 vagrant up                # Lance et provisionne les VM
-vagrant ssh malangloS     # Se connecter à la VM server
-vagrant ssh malangloSW    # Se connecter à la VM agent
+vagrant ssh matorgueS     # Se connecter à la VM server
+vagrant ssh matorgueSW    # Se connecter à la VM agent
 vagrant status            # Affiche l'état des VM (running, shutoff...)
 vagrant provision         # Re-provisionne les VM après modification d'un script
 vagrant halt              # Éteint proprement les VM (sans les supprimer)
