@@ -199,31 +199,40 @@ Le `deploy.yaml` déclare un **volume** alimenté par la ConfigMap, et un **volu
 <details>
 <summary><strong>Deployment</strong></summary>
 <br>
-<u>Deploy.yaml :</u> 
 
-- replicas -> je dis combien je veux de pods
-- le template décrit le pod "type", chaque replicas sera un pod basé sur ce template
-- volumeMount déclare le point de montage cad ou on veut monter le voulme
-- le volume est alimenté par la config map
-- important les lablels doivent mathcer celui du deployment
+Un Deployment est un objet Kubernetes qui gère le cycle de vie d'un ensemble de pods identiques. Il garantit qu'il y a toujours le bon nombre de replicas en cours d'exécution.
+
+Le fichier `deploy.yaml` contient les champs suivants :
+
+- **`replicas`** : le nombre de pods souhaités (ex. 1 pour app1, 3 pour app2)
+- **`selector.matchLabels`** : le label qui identifie les pods gérés par ce Deployment
+- **`template`** : le modèle de pod. Chaque replica est un pod créé à partir de ce template
+- **`template.metadata.labels`** : les labels du pod. Ils doivent **matcher** le `selector` du Deployment et celui du Service
+- **`containers`** : la liste des containers dans le pod (ici un seul : nginx sur le port 80)
+- **`volumeMounts`** : le point de montage dans le container (ex. `/usr/share/nginx/html`)
+- **`volumes`** : la source du volume, alimentée par la ConfigMap
+
+En résumé : le Deployment crée les pods, la ConfigMap fournit le contenu (index.html), et le volume fait le lien entre les deux.
+
 </details>
 
 <details>
 <summary><strong>Service</strong></summary>
 <br>
 
-<u>Service.yml :</u>
+Un Service fournit une **adresse IP stable** et un **nom DNS interne** pour accéder aux pods. Les pods ayant des IP éphémères, le Service abstrait le réseau et assure le **load balancing** quand il y a plusieurs replicas (ex. app2 avec 3 pods).
 
-- Le Service fournit une **adresse IP stable** et un **nom DNS interne** pour accéder aux pods sélectionnés.
-- Il effectue automatiquement un **load balancing** si plusieurs pods correspondent au selector.
-- Les pods ont des IP internes éphémères → le Service **abstrait le réseau des pods**.
-- Le **selector** du Service doit matcher les labels du Deployment pour cibler les bons pods.
-- Définition des ports :
-  - `port` → port interne du Service
-  - `targetPort` → port sur lequel le container écoute
-  - `nodePort` → port exposé sur les nœuds pour l’accès externe
-- `type: NodePort` → Service accessible depuis l’extérieur via `<NodeIP>:<nodePort>`
-- Pour un accès uniquement interne au cluster, utiliser `type: ClusterIP`.
+Le **selector** du Service doit matcher les labels du Deployment pour cibler les bons pods. C'est le lien entre les deux objets.
+
+**Définition des ports :**
+
+| Champ | Rôle | Exemple |
+|-------|------|---------|
+| `port` | Port exposé par le Service dans le cluster | 80 |
+| `targetPort` | Port sur lequel le container écoute | 80 |
+| `nodePort` | Port exposé sur le node pour l'accès externe | 30080 |
+
+Dans cet exercice, les trois services sont en **`type: NodePort`**, ce qui les rend accessibles depuis l'extérieur via `<NodeIP>:<nodePort>` (ex. `192.168.56.110:30080` pour app1). L'alternative `type: ClusterIP` ne rend le service accessible que depuis l'intérieur du cluster.
 
 </details>
 
