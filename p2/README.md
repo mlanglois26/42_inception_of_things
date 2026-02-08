@@ -1,7 +1,6 @@
 # K3S avec Vagrant Again
 
-Contrairement à l'exo précedent, on ne créer qu'une seule vm. Tout sera donc géré depuis le master node.
-Avec K8s ça ne serait pas une bonne pratique mais K3s le permet.
+Contrairement à l'exercice précédent, on ne crée qu'une seule VM. Tout est géré depuis un seul node qui fait à la fois server (control plane) et agent (workloads). En Kubernetes classique, le master node est protégé par un "taint" qui empêche d'y **scheduler** des pods (c'est-à-dire d'y assigner des workloads à exécuter). K3s n'applique pas cette restriction par défaut, ce qui permet de tout faire tourner sur un seul node sans configuration supplémentaire.
 
 Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 3 apps différentes avec 
 - un pod pour app1
@@ -103,45 +102,49 @@ graph TD
 
 <u><strong>Dossier partagé</strong></u>
 
-`sync_folder` monte un volume partagé entre la machine locale et la VM.  
-Cela permet de synchroniser des fichiers entre l’hôte et la machine virtuelle sans copie manuelle.
+`synced_folder` monte un volume partagé entre la machine hôte et la VM.
+Cela permet de synchroniser des fichiers entre l'hôte et la machine virtuelle sans copie manuelle.
 
 Concrètement :
 - les fichiers sont accessibles **des deux côtés**
-- toute modification sur le poste local est immédiatement visible dans la VM
+- toute modification sur l'hôte est immédiatement visible dans la VM
 
 ---
 
 <u><strong>Réseau</strong></u>
 
+Les deux lignes `server.vm.network` du Vagrantfile configurent l'interface **eth1** de la VM. eth0 (NAT libvirt, accès internet) est créée automatiquement et n'apparaît pas dans le Vagrantfile.
+
+**private_network** -- crée eth1 avec une IP fixe :
+
 ```ruby
 server.vm.network :private_network, ip: "192.168.56.110"
 ```
 
-- Attribue une IP fixe à la VM
-- La VM est placée dans un réseau privé
-- Accessible uniquement depuis :
-    - la machine hôte
-    - les autres VM du même hôte
-- Non accessible directement depuis l’extérieur
+- Crée l'interface eth1 sur le réseau privé `192.168.56.0/24`
+- Attribue l'IP fixe `192.168.56.110` à la VM
+- La VM est accessible depuis l'hôte via cette IP (ex. `curl http://192.168.56.110`)
+- Non accessible depuis l'extérieur
 
-<u><strong>Forwarded port</strong></u>
+**forwarded_port** -- mappe un port de l'hôte vers la VM :
 
 ```ruby
 server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
 ```
 
-- Redirige le port 8082 de la machine hôte vers le port 22 de la VM
-- Permet de se connecter en SSH à la VM via :
-  ```ruby
+- Redirige le port 8082 de l'hôte vers le port 22 de la VM
+- Permet de se connecter en SSH à la VM depuis l'hôte via :
+  ```bash
   ssh -p 8082 vagrant@localhost
   ```
-  Ce port n’est accessible que depuis la machine locale
 
-💡 En résumé :
+**Quelle est la différence ?**
 
-- private_network → communication directe hôte ↔ VM via IP
-- forwarded_port → accès à un service de la VM via localhost:PORT
+`private_network` donne une **IP fixe** à la VM sur un réseau privé. On accède à la VM directement par son IP. `forwarded_port` ne crée pas d'IP, il **redirige un port** de l'hôte vers la VM. C'est utile quand on veut accéder à un service précis (ici SSH) sans connaître l'IP de la VM.
+
+**Pourquoi la syntaxe est différente ?** (`:private_network` vs `"forwarded_port"`)
+
+C'est du Ruby. `:private_network` est un **symbole** et `"forwarded_port"` est un **string**. Les deux sont interchangeables ici, Vagrant accepte les deux formes. On pourrait écrire `"private_network"` ou `:forwarded_port`, ça fonctionnerait pareil.
 </details>
 
 <details>
