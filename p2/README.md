@@ -241,47 +241,61 @@ Dans cet exercice, les trois services sont en **`type: NodePort`**, ce qui les r
 <summary><strong>Ingress</strong></summary>
 <br>
 
-- C'est une configuration qui décrit des règles (host et path) et vers quels services router
-- L’Ingress est la **couche d’accès HTTP externe**.
-- Il agit comme un **routeur HTTP/HTTPS** pour exposer plusieurs services à l'exterieur.
-- Il fonctionne **toujours avec un Ingress Controller** (Nginx, Traefik…) qui fait le vrai travail de proxy et de load balancing.
-- 🚨 Par default, lorsque l'on installe k3s, son ingress controller Traefik est aussi installé 
+Un Ingress est une ressource Kubernetes qui décrit des **règles HTTP** (host et path) pour router des requêtes vers des **Services**.
 
-- Chaque règle de l’Ingress correspond à un **host** et un **path**.
-- La requête entrante est transmise au **service ciblé** via son nom.
-- Les services exposent les pods à l’échelle du cluster, l’Ingress rend ces services accessibles depuis l’extérieur.
-- Dans les règles :
-  - **service.port.number** → port du service vers lequel la requête est routée
-  - **targetPort** (défini dans le Service) → port sur lequel le container écoute
-- `pathType: Prefix` → toutes les requêtes commençant par ce chemin sont envoyées au service cible.
+Un Ingress ne fonctionne pas seul : il a besoin d’un **Ingress Controller** (Traefik, Nginx, …) qui reçoit les requêtes HTTP et applique les règles. Sur k3s, **Traefik** est installé par défaut.
 
--> type d'objet = ingress
--> ingress controller recoit une requete vers un host, et un path, il regarde la rule correspondante
--> la requete est transmise au service via le name
+### Ce que l’Ingress apporte par rapport à un Service
 
-un service expose des pods à l'échelle du cluster
-l'ingress rend des services accessibles depuis l'extérieur du cluster via http/s
+Un **Service** (NodePort) expose *un* service sur *un* port du node. Sans Ingress, l’accès aux apps se fait typiquement par des ports différents :
 
--> le target port c'est le port sur lequel l'application écoute dans le pod
--> port c'est le port exposé par le service lui même
+```
+http://192.168.56.110:30080   → app1
+http://192.168.56.110:30081   → app2
+http://192.168.56.110:30082   → app3
+```
 
-ports:
-- port: 80        # ce que le client utilise
-  targetPort: 3000 # ce que le pod écoute
+Un **Ingress** permet un **point d’entrée unique** (80/443) et du **routage HTTP** (par host / path) vers plusieurs services :
 
-Client interne
-   ↓
-app1-service:80   (port)
-   ↓
-Pod:3000          (targetPort)
+```
+http://app1.com               → app1
+http://app2.com               → app2
+http://192.168.56.110         → app3 (règle “default”)
+```
 
-backend:
-  service:
-    name: app1-service
-    port:
-      number: 80
+### Schéma visuel (Service vs Ingress)
 
-Ingress → app1-service:80
+```mermaid
+flowchart LR
+  %% --- Sans Ingress ---
+  subgraph SANS["Sans Ingress (accès direct via NodePort)"]
+    c1["Client"] -->|"http://NodeIP:30080"| np1["NodePort 30080"]
+    np1 --> svc1["Service app1 :80"] --> pods1["Pods app1 (nginx écoute :80)"]
+
+    c2["Client"] -->|"http://NodeIP:30081"| np2["NodePort 30081"]
+    np2 --> svc2["Service app2 :80"] --> pods2["Pods app2 (nginx écoute :80)"]
+  end
+
+  %% --- Avec Ingress ---
+  subgraph AVEC["Avec Ingress (un seul point d'entrée HTTP, routage par Host/Path)"]
+    c3["Client"] -->|"http(s)://NodeIP:80/443"| entry["Point d'entrée unique :80/:443"]
+    entry --> ic["Ingress Controller (Traefik)"]
+    ing["Objet Ingress (règles Host/Path)"] -.-> ic
+
+    ic -->|"Host: app1.com  Path: /"| svc1b["Service app1 :80"] --> pods1b["Pods app1 (écoute :80)"]
+    ic -->|"Host: app2.com  Path: /"| svc2b["Service app2 :80"] --> pods2b["Pods app2 (écoute :80)"]
+  end
+```
+
+### Lecture rapide de `ingress/ingress.yaml`
+
+- Chaque bloc `rules` route un **host** et un **path** vers un Service :
+  - `spec.rules[].host` : nom de domaine (ex. `app1.com`)
+  - `paths[].path` + `pathType: Prefix` : toutes les requêtes qui commencent par ce chemin matchent la règle
+  - `backend.service.name` : **nom du Service** cible (ex. `app1-service`)
+  - `backend.service.port.number` : **port du Service** (ici `80`)
+
+Le Service relaie ensuite vers les pods via `targetPort` (défini dans le Service) qui correspond au port sur lequel le container écoute.
 </details>
 
 ---
@@ -304,27 +318,29 @@ kubectl exec -it <pod-name> -- /bin/sh
 kubectl get svc -n kube-system
 ```
 
-<u>Les checks :</u>
+**Les checks (Ingress / Services) :**
 
-- Depuis la vm de l'exo :
-```ruby
-curl -H "Host: app3.com" http://localhost
+- Depuis la VM de l'exo (sur le node, vers Traefik en local) :
+
+```bash
+curl http://localhost
+curl -H "Host: app1.com" http://localhost
+curl -H "Host: app2.com" http://localhost
 ```
 
-- Depuis l'host (vm projet) :
-```ruby
+- Depuis la VM projet (accès externe vers le node) :
+
+```bash
+curl http://192.168.56.110
 curl -H "Host: app1.com" http://192.168.56.110
-```
-Où pour faire un check sur browser web
-```ruby
-http://192.168.56.110:30081 (le nodePort de app2)
+curl -H "Host: app2.com" http://192.168.56.110
 ```
 
-- Dans la vm
+- Check direct via NodePort (sans Ingress) :
 
-- Avec Traefik
-
-- Sans Traefik
+```text
+http://192.168.56.110:30081  (NodePort de app2)
+```
 
 ---
 
