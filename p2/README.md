@@ -162,25 +162,31 @@ curl -sfL https://get.k3s.io | sh -
 </details>
 
 <details>
-<summary><strong>Configmap</strong></summary>
+<summary><strong>ConfigMap</strong></summary>
 <br>
 
-Une Configmap, c'est un object kubernetes qui stocke des fichiers (en l'occurence nos index.html)
+Une ConfigMap est un objet Kubernetes qui stocke des **paires clé/valeur**. Quand on utilise `--from-file`, la clé est le nom du fichier et la valeur est son contenu. En l'occurrence, on s'en sert pour stocker les fichiers `index.html` de app1 et app3.
 
-- create seul echoue si la configmap existe deja
-- apply seul nécessite un YAML
+**Pourquoi ce pattern ?**
 
-- --dry-run=client -> ne créer rien, génère la ressource
-- -o yaml -> sort la configmap en yaml 
-- --save-config -> permet à apply de gérer les diffs
+```bash
+kubectl create configmap app1-index --from-file=/apps/app1/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
+```
 
-Le deployment des pods est l'est l'endroit où l'on va monter ces configs maps
+- `create` seul échoue si la ConfigMap existe déjà
+- `apply` seul nécessite un fichier YAML
 
-Sans ConfigMap :
-- nginx → page par défaut
+Le pattern combine les deux : `create --dry-run=client` génère le YAML sans rien créer, puis `apply` l'applique (création ou mise à jour).
 
-Avec ConfigMap :
-- nginx → /usr/share/nginx/html → ton index.html
+| Flag | Rôle |
+|------|------|
+| `--dry-run=client` | Ne crée rien, génère la ressource en mémoire |
+| `-o yaml` | Sort la ConfigMap au format YAML |
+| `--save-config` | Permet à `apply` de gérer les diffs lors des mises à jour |
+
+**Comment la ConfigMap arrive dans le container ?**
+
+Le `deploy.yaml` déclare un **volume** alimenté par la ConfigMap, et un **volumeMount** qui le monte dans le container au chemin `/usr/share/nginx/html`. Ainsi, nginx sert le fichier `index.html` de la ConfigMap au lieu de sa page par défaut.
 
 <table>
   <tr>
