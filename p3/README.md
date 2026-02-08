@@ -12,55 +12,30 @@ L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
  - argocd-repo-server
  - argocd-application-controller
 
-### Architecture
+### Workflow entre les namespaces argocd et dev
 
 ```mermaid
-graph TB
-    subgraph Host["Machine hote"]
-        direction TB
-        Docker["Docker Engine"]
-        kubectl["kubectl"]
+graph LR
+    GitHub["GitHub\np3/dev/"]
 
-        subgraph K3D["Cluster k3d IOT-cluster"]
-            direction TB
-
-            subgraph ServerNode["Server Node - container Docker"]
-                KubeAPI["kube-apiserver"]
-            end
-
-            subgraph AgentNode["Agent Node - container Docker"]
-                direction TB
-
-                subgraph NSargocd["Namespace argocd"]
-                    argoServer["argocd-server :443"]
-                    argoRepo["argocd-repo-server"]
-                    argoController["argocd-application-controller"]
-                end
-
-                subgraph NSdev["Namespace dev"]
-                    DeployMyApp["Deployment my-app"]
-                    PodMyApp["Pod my-app :8888"]
-                    SvcMyApp["Service my-app :80"]
-                end
-            end
-        end
+    subgraph ns_argocd ["Namespace argocd"]
+        controller["application-controller"]
+        repo["repo-server"]
+        server["argocd-server\n:443"]
     end
 
-    GitHub["GitHub Repo - mlanglois26/42_inception_of_things - branch main, path p3/dev"]
-    Browser["Navigateur"]
+    subgraph ns_dev ["Namespace dev"]
+        pod["Pod my-app\n:8888"]
+        svc["Service my-app\n:80"]
+    end
 
-    argoController -->|"watch + sync"| GitHub
-    GitHub -.->|"deployment.yaml, service.yaml"| argoController
-    argoController -->|"apply manifests"| NSdev
+    controller -->|"1. clone repo"| repo
+    repo -->|"2. lit les manifests"| GitHub
+    controller -->|"3. apply dans dev"| ns_dev
+    svc -->|"targetPort 8888"| pod
 
-    DeployMyApp --> PodMyApp
-    SvcMyApp -->|"targetPort 8888"| PodMyApp
-
-    Browser -->|"localhost:8080"| argoServer
-    Browser -->|"localhost:8888"| SvcMyApp
-
-    kubectl -->|"port-forward 8080:443"| argoServer
-    kubectl -->|"port-forward 8888:80"| SvcMyApp
+    localhost8080["localhost:8080"] -->|"port-forward"| server
+    localhost8888["localhost:8888"] -->|"port-forward"| svc
 ```
 
 ---
@@ -213,29 +188,18 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   Cette seule commande crée tout ce qu'il faut dans le namespace `argocd` :
 
   ```mermaid
-  graph TB
-      subgraph install ["Ce que install.yaml cree dans le namespace argocd"]
-          direction TB
-          CRDs["CRDs : Application, AppProject..."]
-          subgraph pods ["Deployments / Pods"]
-              argoServer["argocd-server - UI + API :443"]
-              argoRepo["argocd-repo-server - clone les repos Git"]
-              argoController["argocd-application-controller - boucle watch + sync"]
-          end
-          subgraph infra ["Services, RBAC, Config"]
-              svc["Services : expose les pods en interne"]
-              sa["ServiceAccounts + ClusterRoles - droits pour apply dans tous les ns"]
-              cm["ConfigMaps + Secrets - config ArgoCD + mdp admin"]
-          end
+  graph LR
+      subgraph ns_argocd ["Namespace argocd - cree par install.yaml"]
+          server["argocd-server\nUI + API"]
+          repo["argocd-repo-server\nclone les repos Git"]
+          controller["argocd-application-controller\nboucle watch + sync"]
       end
-      CRDs -.->|"permet de creer des objets Application"| argoController
-      argoController -->|"demande les repos"| argoRepo
-      argoController -->|"applique les manifests via API K8s"| target["Namespace cible"]
   ```
 
-  - Les **CRDs** apprennent à Kubernetes ce qu'est un objet `Application`. Sans elles, `kubectl apply -f application.yaml` échouerait.
-  - Le **argocd-application-controller** est une boucle infinie : il watch les objets `Application`, demande à **argocd-repo-server** de cloner le repo, puis applique les manifests via l'API Kubernetes.
-  - Les **RBAC** donnent au controller les droits d'apply dans n'importe quel namespace (c'est pour ça qu'il peut créer des ressources dans `dev`).
+  En plus des pods, le manifest installe aussi :
+  - Les **CRDs** → apprennent à Kubernetes ce qu'est un objet `Application`
+  - Les **RBAC** → donnent au controller les droits de créer des ressources dans n'importe quel namespace
+  - Les **Services, ConfigMaps, Secrets** → config interne + mot de passe admin
 
   > 💡 Le comportement "auto-heal" (recréer un pod supprimé manuellement, corriger une dérive) n'est pas activé par défaut dans ArgoCD.
   > C'est le `syncPolicy.automated` avec `selfHeal: true` et `prune: true` dans l'`Application.yaml` qui l'active.
