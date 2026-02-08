@@ -4,15 +4,13 @@
 
 Le but de l'exo est d'utiliser :
 
-- k3d, c'est à dire Kubernetes dans Docker
-- ArgoCD, c'est à dire un GitOps controller
-
-k3d qui est un moyen de lancer un cluster kubernetes local dans des containeurs Docker. Le kube-apiserver et les nodes tournent dans des containers Docker. 
+- **k3d** : un moyen de lancer un cluster Kubernetes local dans des conteneurs Docker. Le kube-apiserver et les nodes tournent dans des containers Docker.
+- **ArgoCD** : un GitOps controller pour Kubernetes.
 
 L'installation d'ArgoCD déploie plusieurs pods dans le cluster k3d dont :
  - argocd-server (UI/API)
  - argocd-repo-server
- argocd-application-controller
+ - argocd-application-controller
 
 ---
 
@@ -83,8 +81,12 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   ```bash
   curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
   ```
-  Si le cluster existe déjà, on le supprime. Sinon on le créer avec un node server et un node agent
-  -- wait pour bloquer la commande et attendre que le cluster soit prêt avant le lancer les objets Kubernetes
+  Si le cluster existe déjà, on le supprime :
+  ```bash
+  k3d cluster list | grep -q "$CLUSTER_NAME" && k3d cluster delete $CLUSTER_NAME
+  ```
+  Puis on le crée avec un node server et un node agent.
+  `--wait` bloque la commande et attend que le cluster soit prêt avant de lancer les objets Kubernetes :
   ```bash
   k3d cluster create $CLUSTER_NAME --servers 1 --agents 1 --wait
   ```
@@ -95,7 +97,7 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   <br>
 
   - Un namespace, c'est une isolation logique pour organiser les ressources
-  - Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes (c'est Kubernetes qui gère l'ordonnance)
+  - Un namespace peut avoir ses pods sur plusieurs nodes, et plusieurs namespaces peuvent partager les mêmes nodes (c'est Kubernetes qui gère l'ordonnancement)
 
   💡 Bonnes pratiques :
 
@@ -103,12 +105,12 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   - Nodes → dimensionner selon le nombre de pods, la charge, la résilience
   - Ne pas créer un node pour chaque namespace → ça devient inutile et compliqué à gérer
 
-  <table>
-    <tr>
-      <td><img src="../images/namespace.png" alt="namespace"/></td>
-    </tr>
-  </table>
- 
+  Dans `init.sh`, on crée deux namespaces via leurs fichiers YAML :
+  ```bash
+  kubectl apply -f dev/namespace.yaml      # namespace "dev" pour l'application
+  kubectl apply -f argocd/namespace.yaml   # namespace "argocd" pour Argo CD
+  ```
+
 </details>
 
 <details>
@@ -125,7 +127,7 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
     - Si un pod est supprimé manuellement → Argo CD peut le recréer automatiquement
     - Si tu modifies un manifeste dans Git → Argo CD met à jour ton cluster
     <br>
-    💡 Donc en gros, Kubernetes obéit à Git. Plus besoin de `kubectl apply` les `deployements`, les `services` et les `ingress` à la main
+    💡 Donc en gros, Kubernetes obéit à Git. Plus besoin de `kubectl apply` les `deployments`, les `services` et les `ingress` à la main
 
 <br>
 
@@ -144,10 +146,22 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
 
 <br>
 
+- <u>Installation dans init.sh</u>
+
+  On installe ArgoCD via le manifest officiel avec `--server-side=true` (nécessaire car certaines CRDs dépassent la taille max d'annotation côté client) :
+  ```bash
+  kubectl apply -n argocd --server-side=true -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  ```
+
+  > 💡 Le comportement "auto-heal" (recréer un pod supprimé manuellement, corriger une dérive) n'est pas activé par défaut dans ArgoCD.
+  > C'est le `syncPolicy.automated` avec `selfHeal: true` et `prune: true` dans l'`Application.yaml` qui l'active.
+
+<br>
+
 - <u>Accéder à l'UI ArgoCD</u>
 
   Attends que le pod UI (argocd-server) soit prêt avec :
-  ```ruby
+  ```bash
   kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
   ```
   
@@ -158,8 +172,8 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   L'UI sera sur ***http://localhost:8080***
 
 
-  Pour s'y connecter, ArgoCD créer automatiquement un mot de passe admin initial
-  Il le stock dans un secret Kubernetes intitulé ***argocd-initial-admin-secret***, il faut donc le récupérer avec :
+  Pour s'y connecter, ArgoCD crée automatiquement un mot de passe admin initial.
+  Il le stocke dans un secret Kubernetes intitulé ***argocd-initial-admin-secret***, il faut donc le récupérer avec :
   ```bash
   kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
   ```
