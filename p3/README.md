@@ -50,7 +50,7 @@ graph TB
     Browser["Navigateur"]
 
     argoController -->|"watch + sync"| GitHub
-    GitHub -.->|"deployment.yaml, service.yaml, ingress.yaml"| argoController
+    GitHub -.->|"deployment.yaml, service.yaml"| argoController
     argoController -->|"apply manifests"| NSdev
 
     DeployMyApp --> PodMyApp
@@ -210,6 +210,33 @@ k3d fait tourner les nœuds Kubernetes dans des conteneurs Docker, et `kubectl` 
   kubectl apply -n argocd --server-side=true -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
   ```
 
+  Cette seule commande crée tout ce qu'il faut dans le namespace `argocd` :
+
+  ```mermaid
+  graph TB
+      subgraph install ["Ce que install.yaml cree dans le namespace argocd"]
+          direction TB
+          CRDs["CRDs : Application, AppProject..."]
+          subgraph pods ["Deployments / Pods"]
+              argoServer["argocd-server - UI + API :443"]
+              argoRepo["argocd-repo-server - clone les repos Git"]
+              argoController["argocd-application-controller - boucle watch + sync"]
+          end
+          subgraph infra ["Services, RBAC, Config"]
+              svc["Services : expose les pods en interne"]
+              sa["ServiceAccounts + ClusterRoles - droits pour apply dans tous les ns"]
+              cm["ConfigMaps + Secrets - config ArgoCD + mdp admin"]
+          end
+      end
+      CRDs -.->|"permet de creer des objets Application"| argoController
+      argoController -->|"demande les repos"| argoRepo
+      argoController -->|"applique les manifests via API K8s"| target["Namespace cible"]
+  ```
+
+  - Les **CRDs** apprennent à Kubernetes ce qu'est un objet `Application`. Sans elles, `kubectl apply -f application.yaml` échouerait.
+  - Le **argocd-application-controller** est une boucle infinie : il watch les objets `Application`, demande à **argocd-repo-server** de cloner le repo, puis applique les manifests via l'API Kubernetes.
+  - Les **RBAC** donnent au controller les droits d'apply dans n'importe quel namespace (c'est pour ça qu'il peut créer des ressources dans `dev`).
+
   > 💡 Le comportement "auto-heal" (recréer un pod supprimé manuellement, corriger une dérive) n'est pas activé par défaut dans ArgoCD.
   > C'est le `syncPolicy.automated` avec `selfHeal: true` et `prune: true` dans l'`Application.yaml` qui l'active.
 
@@ -265,9 +292,9 @@ sequenceDiagram
     Run->>ArgoCD: kubectl apply application.yaml
     Note over ArgoCD: "Ok, je dois surveiller p3/dev sur GitHub"
     ArgoCD->>GitHub: clone + watch (branch main, path p3/dev)
-    GitHub-->>ArgoCD: deployment.yaml, service.yaml, ingress.yaml
-    ArgoCD->>DevNS: apply les 3 manifests
-    Note over DevNS: Pod my-app + Service + Ingress sont créés
+    GitHub-->>ArgoCD: deployment.yaml, service.yaml
+    ArgoCD->>DevNS: apply les manifests
+    Note over DevNS: Pod my-app + Service sont créés
     Run->>DevNS: kubectl wait pod my-app Ready
 
     Note over Run: Phase 3 - Tunnels
@@ -340,10 +367,9 @@ sequenceDiagram
     path: p3/dev               # dossier contenant les manifests
   ```
 
-  ArgoCD va y trouver 3 fichiers :
+  ArgoCD va y trouver 2 manifests :
   - `deployment.yaml` → crée le pod `my-app` (image `wil42/playground:v1`)
   - `service.yaml` → expose le pod sur le port 80 (targetPort 8888)
-  - `ingress.yaml` → route HTTP vers le service
 
   ```yaml
   destination:
