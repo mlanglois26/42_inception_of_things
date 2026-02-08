@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/mlanglois26/42_inception_of_things.git
+    repoURL: https://github.com/mlanglois26/42_inception_of_things_malanglo.git
     targetRevision: main
     path: p3/dev
   destination:
