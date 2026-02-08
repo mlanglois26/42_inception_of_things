@@ -16,23 +16,6 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
   <summary>Schémas : architecture K3s d'un point de vue général</summary>
   <br>
 
-Hiérarchie k3s : Cluster > Node > Pod > Container
-
-```mermaid
-graph TD
-    subgraph cluster [Cluster]
-        subgraph node1 [Node]
-            subgraph pod1 [Pod]
-                c1[Container]
-            end
-            subgraph pod2 [Pod]
-                c2[Container]
-                c3[Container]
-            end
-        end
-    end
-```
-
   <table>
     <tr>
       <td><img src="../images/global.png" alt="global" width="800"/></td>
@@ -46,32 +29,6 @@ graph TD
 <details>
   <summary>Schémas : architecture infra de l'exo 2</summary>
   <br>
-
-VM Projet > VM Exo 2 > Cluster k3s single-node :
-
-```mermaid
-graph TD
-    subgraph vmProjet [VM Projet - Ubuntu / VirtualBox]
-        subgraph vmExo2 ["VM Exo 2 - malangloS (192.168.56.110)"]
-            subgraph clusterK3s [Cluster k3s]
-                singleNode[Node unique - Server + Agent]
-            end
-        end
-    end
-```
-
-Détail du node avec les 5 pods :
-
-```mermaid
-graph TD
-    subgraph node [Node - malangloS]
-        podA1["pod app1 (1 replica)"]
-        podA2a["pod app2 (replica 1)"]
-        podA2b["pod app2 (replica 2)"]
-        podA2c["pod app2 (replica 3)"]
-        podA3["pod app3 (1 replica)"]
-    end
-```
 
   <table>
     <tr>
@@ -107,6 +64,32 @@ graph LR
       <td><img src="../images/network.png" alt="network" width="800"/></td>
     </tr>
   </table>
+</details>
+
+<br>
+
+<details>
+  <summary>Écouter vs Exposer</summary>
+  <br>
+
+Chaque couche **expose** (rend accessible au niveau supérieur) jusqu'au container qui lui **écoute** (reçoit et sert la donnée) :
+
+```mermaid
+graph TD
+    ext["Requête HTTP depuis l'extérieur"] -->|"entre dans le cluster"| ingress
+    ingress["Ingress - expose les services vers l'extérieur"] -->|"route vers le bon service"| svc
+    svc["Service :80 - expose les pods dans le cluster"] -->|"load balance vers un pod"| pod
+    pod["Pod :80 - expose le container au réseau du cluster"] --> container
+    container["Container nginx - écoute :80 - sert la donnée"]
+```
+
+| Couche | Verbe | Ce qu'elle fait |
+|--------|-------|-----------------|
+| **Container** | **écoute** | Le processus nginx bind le port 80, reçoit les requêtes et renvoie du HTML |
+| **Pod** | **expose** | Rend le port du container accessible au réseau interne du cluster |
+| **Service** | **expose** | Fournit une IP stable + DNS + load balancing vers les pods |
+| **Ingress** | **expose** | Rend le service accessible depuis l'extérieur du cluster via HTTP |
+
 </details>
 
 ---
@@ -220,15 +203,6 @@ Sans ConfigMap :
 
 Avec ConfigMap :
 - nginx → /usr/share/nginx/html → ton index.html
-
-Flux d'un fichier index.html depuis l'hôte jusqu'au container :
-
-```mermaid
-graph TD
-    code["Code sur la VM Projet"] -->|"synced_folder"| vm["VM Exo 2 : /apps, /ingress"]
-    vm -->|"kubectl create configmap"| cm["ConfigMap"]
-    cm -->|"volume spec dans deploy.yaml"| pod["Pod > Container > /usr/share/nginx/html/index.html"]
-```
 
 <table>
   <tr>
