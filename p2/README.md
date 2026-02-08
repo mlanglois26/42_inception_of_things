@@ -1,7 +1,6 @@
 # K3S avec Vagrant Again
 
-Contrairement à l'exo précedent, on ne créer qu'une seule vm. Tout sera donc géré depuis le master node.
-Avec K8s ça ne serait pas une bonne pratique mais K3s le permet.
+Contrairement à l'exercice précédent, on ne crée qu'une seule VM. Tout est géré depuis un seul node qui fait à la fois server (control plane) et agent (workloads). En Kubernetes classique, le master node est protégé par un "taint" qui empêche d'y **scheduler** des pods (c'est-à-dire d'y assigner des workloads à exécuter). K3s n'applique pas cette restriction par défaut, ce qui permet de tout faire tourner sur un seul node sans configuration supplémentaire.
 
 Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 3 apps différentes avec 
 - un pod pour app1
@@ -14,9 +13,6 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
 
 <details>
   <summary>Schémas : architecture K3s d'un point de vue général</summary>
-  <br>
-  
-  Cluster -> Node -> Pods -> Containers
   <br>
 
   <table>
@@ -47,6 +43,21 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
   <summary>Schémas : architecture network de l'exo 2</summary>
   <br>
 
+Flux complet : requête HTTP > Ingress Controller (Traefik) > Service > Pods
+
+```mermaid
+graph LR
+    req["Requête HTTP"] --> ingress["Ingress Controller - Traefik"]
+    ingress -->|"host: app1.com"| svc1["service app-1 :80"]
+    ingress -->|"host: app2.com"| svc2["service app-2 :80"]
+    ingress -->|"default"| svc3["service app-3 :80"]
+    svc1 --> podA1["pod app1"]
+    svc2 --> podA2a["pod app2"]
+    svc2 --> podA2b["pod app2"]
+    svc2 --> podA2c["pod app2"]
+    svc3 --> podA3["pod app3"]
+```
+
   <table>
     <tr>
       <td><img src="../images/network.png" alt="network" width="800"/></td>
@@ -54,7 +65,34 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
   </table>
 </details>
 
+<br>
+
+<details>
+  <summary>Écouter vs Exposer</summary>
+  <br>
+
+Chaque couche **expose** (rend accessible au niveau supérieur) jusqu'au container qui lui **écoute** (reçoit et sert la donnée) :
+
+```mermaid
+graph TD
+    ext["Requête HTTP depuis l'extérieur"] -->|"entre dans le cluster"| ingress
+    ingress["Ingress - expose les services vers l'extérieur"] -->|"route vers le bon service"| svc
+    svc["Service :80 - expose les pods dans le cluster"] -->|"load balance vers un pod"| pod
+    pod["Pod :80 - expose le container au réseau du cluster"] --> container
+    container["Container nginx - écoute :80 - sert la donnée"]
+```
+
+| Couche | Verbe | Ce qu'elle fait |
+|--------|-------|-----------------|
+| **Container** | **écoute** | Le processus nginx bind le port 80, reçoit les requêtes et renvoie du HTML |
+| **Pod** | **expose** | Rend le port du container accessible au réseau interne du cluster |
+| **Service** | **expose** | Fournit une IP stable + DNS + load balancing vers les pods |
+| **Ingress** | **expose** | Rend le service accessible depuis l'extérieur du cluster via HTTP |
+
+</details>
+
 ---
+
 
 ## Explication du code
 
@@ -65,45 +103,49 @@ Le but du 2e exo est donc de créer une vm, donc un node dans lequel on lancera 
 
 <u><strong>Dossier partagé</strong></u>
 
-`sync_folder` monte un volume partagé entre la machine locale et la VM.  
-Cela permet de synchroniser des fichiers entre l’hôte et la machine virtuelle sans copie manuelle.
+`synced_folder` monte un volume partagé entre la machine hôte et la VM.
+Cela permet de synchroniser des fichiers entre l'hôte et la machine virtuelle sans copie manuelle.
 
 Concrètement :
 - les fichiers sont accessibles **des deux côtés**
-- toute modification sur le poste local est immédiatement visible dans la VM
+- toute modification sur l'hôte est immédiatement visible dans la VM
 
 ---
 
 <u><strong>Réseau</strong></u>
 
+Les deux lignes `server.vm.network` du Vagrantfile configurent l'interface **eth1** de la VM. eth0 (NAT libvirt, accès internet) est créée automatiquement et n'apparaît pas dans le Vagrantfile.
+
+**private_network** -- crée eth1 avec une IP fixe :
+
 ```ruby
 server.vm.network :private_network, ip: "192.168.56.110"
 ```
 
-- Attribue une IP fixe à la VM
-- La VM est placée dans un réseau privé
-- Accessible uniquement depuis :
-    - la machine hôte
-    - les autres VM du même hôte
-- Non accessible directement depuis l’extérieur
+- Crée l'interface eth1 sur le réseau privé `192.168.56.0/24`
+- Attribue l'IP fixe `192.168.56.110` à la VM
+- La VM est accessible depuis l'hôte via cette IP (ex. `curl http://192.168.56.110`)
+- Non accessible depuis l'extérieur
 
-<u><strong>Forwarded port</strong></u>
+**forwarded_port** -- mappe un port de l'hôte vers la VM :
 
 ```ruby
-server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
+server.vm.network :forwarded_port, guest: 22, host: "8082", id: "ssh"
 ```
 
-- Redirige le port 8082 de la machine hôte vers le port 22 de la VM
-- Permet de se connecter en SSH à la VM via :
-  ```ruby
+- Redirige le port 8082 de l'hôte vers le port 22 de la VM
+- Permet de se connecter en SSH à la VM depuis l'hôte via :
+  ```bash
   ssh -p 8082 vagrant@localhost
   ```
-  Ce port n’est accessible que depuis la machine locale
 
-💡 En résumé :
+**Quelle est la différence ?**
 
-- private_network → communication directe hôte ↔ VM via IP
-- forwarded_port → accès à un service de la VM via localhost:PORT
+`private_network` donne une **IP fixe** à la VM sur un réseau privé. On accède à la VM directement par son IP. `forwarded_port` ne crée pas d'IP, il **redirige un port** de l'hôte vers la VM. C'est utile quand on veut accéder à un service précis (ici SSH) sans connaître l'IP de la VM.
+
+**Note sur la syntaxe Ruby :**
+
+Les deux types réseau utilisent la notation **symbole** (`:private_network`, `:forwarded_port`). En Ruby, un symbole (préfixé par `:`) est un identifiant léger et immuable. Vagrant accepte aussi la forme string (`"forwarded_port"`), les deux sont interchangeables.
 </details>
 
 <details>
@@ -116,55 +158,36 @@ server.vm.network "forwarded_port", guest: 22, host: "8082", id: "ssh"
 curl -sfL https://get.k3s.io | sh -
 ```
 
-- on créer le dossier /root/.kube
-- on copie y copie le contenu de /etc/rancher/k3s/k3s.yaml /root/.kube/config
-- on donne les droits de lecture/écriture à root
-
-<u>Pourquoi ?</u>
-
-Parce que kubectl cherche son fichier de config par défault dans /root/config
-MAIS k3s le créer par défault dans etc/rancher/k3s/k3s.yaml
-
-<u>Kubectl, c'est quoi ?</u>
-
-C'est l'outils de ligne de commande de kubernetes
-Pour fonctionner il a besoin de savoir :
-- ou est le cluster (IP + port)
-- comment s'authentifier (certificats)
-- quel cluster utiliser
-
-Toutes ces infos sont présentes dans le file kubeconfig.yml
-
-<u>Test</u>
-
-```ruby
-kubectl get nodes
-```
-
-C'est juste pour être sûre que la cli soit fonctionnelle avant d'utiliser les commandes qu'on veut vraiment lancer
-Car kubernetes démarre lentement et l'api server peut ne pas être prête à temps
+- Le script attend que l'API server k3s soit prête (`kubectl get nodes`) avant de lancer les déploiements, car Kubernetes démarre lentement.
+- La copie manuelle du kubeconfig vers `/root/.kube/config` n'est pas nécessaire : k3s fournit son propre `kubectl` qui utilise automatiquement `/etc/rancher/k3s/k3s.yaml`.
 </details>
 
 <details>
-<summary><strong>Configmap</strong></summary>
+<summary><strong>ConfigMap</strong></summary>
 <br>
 
-Une Configmap, c'est un object kubernetes qui stocke des fichiers (en l'occurence nos index.html)
+Une ConfigMap est un objet Kubernetes qui stocke des **paires clé/valeur**. Quand on utilise `--from-file`, la clé est le nom du fichier et la valeur est son contenu. En l'occurrence, on s'en sert pour stocker les fichiers `index.html` de app1 et app3.
 
-- create seul echoue si la configmap existe deja
-- apply seul nécessite un YAML
+**Pourquoi ce pattern ?**
 
-- --dry-run=client -> ne créer rien, génère la ressource
-- -o yaml -> sort la configmap en yaml 
-- --save-config -> permet à apply de gérer les diffs
+```bash
+kubectl create configmap app1-index --from-file=/apps/app1/index.html --save-config -o yaml --dry-run=client | kubectl apply -f -
+```
 
-Le deployment des pods est l'est l'endroit où l'on va monter ces configs maps
+- `create` seul échoue si la ConfigMap existe déjà
+- `apply` seul nécessite un fichier YAML
 
-Sans ConfigMap :
-- nginx → page par défaut
+Le pattern combine les deux : `create --dry-run=client` génère le YAML sans rien créer, puis `apply` l'applique (création ou mise à jour).
 
-Avec ConfigMap :
-- nginx → /usr/share/nginx/html → ton index.html
+| Flag | Rôle |
+|------|------|
+| `--dry-run=client` | Ne crée rien, génère la ressource en mémoire |
+| `-o yaml` | Sort la ConfigMap au format YAML |
+| `--save-config` | Permet à `apply` de gérer les diffs lors des mises à jour |
+
+**Comment la ConfigMap arrive dans le container ?**
+
+Le `deploy.yaml` déclare un **volume** alimenté par la ConfigMap, et un **volumeMount** qui le monte dans le container au chemin `/usr/share/nginx/html`. Ainsi, nginx sert le fichier `index.html` de la ConfigMap au lieu de sa page par défaut.
 
 <table>
   <tr>
@@ -177,31 +200,40 @@ Avec ConfigMap :
 <details>
 <summary><strong>Deployment</strong></summary>
 <br>
-<u>Deploy.yaml :</u> 
 
-- replicas -> je dis combien je veux de pods
-- le template décrit le pod "type", chaque replicas sera un pod basé sur ce template
-- volumeMount déclare le point de montage cad ou on veut monter le voulme
-- le volume est alimenté par la config map
-- important les lablels doivent mathcer celui du deployment
+Un Deployment est un objet Kubernetes qui gère le cycle de vie d'un ensemble de pods identiques. Il garantit qu'il y a toujours le bon nombre de replicas en cours d'exécution.
+
+Le fichier `deploy.yaml` contient les champs suivants :
+
+- **`replicas`** : le nombre de pods souhaités (ex. 1 pour app1, 3 pour app2)
+- **`selector.matchLabels`** : le label qui identifie les pods gérés par ce Deployment
+- **`template`** : le modèle de pod. Chaque replica est un pod créé à partir de ce template
+- **`template.metadata.labels`** : les labels du pod. Ils doivent **matcher** le `selector` du Deployment et celui du Service
+- **`containers`** : la liste des containers dans le pod (ici un seul : nginx sur le port 80)
+- **`volumeMounts`** : le point de montage dans le container (ex. `/usr/share/nginx/html`)
+- **`volumes`** : la source du volume, alimentée par la ConfigMap
+
+En résumé : le Deployment crée les pods, la ConfigMap fournit le contenu (index.html), et le volume fait le lien entre les deux.
+
 </details>
 
 <details>
 <summary><strong>Service</strong></summary>
 <br>
 
-<u>Service.yml :</u>
+Un Service fournit une **adresse IP stable** et un **nom DNS interne** pour accéder aux pods. Les pods ayant des IP éphémères, le Service abstrait le réseau et assure le **load balancing** quand il y a plusieurs replicas (ex. app2 avec 3 pods).
 
-- Le Service fournit une **adresse IP stable** et un **nom DNS interne** pour accéder aux pods sélectionnés.
-- Il effectue automatiquement un **load balancing** si plusieurs pods correspondent au selector.
-- Les pods ont des IP internes éphémères → le Service **abstrait le réseau des pods**.
-- Le **selector** du Service doit matcher les labels du Deployment pour cibler les bons pods.
-- Définition des ports :
-  - `port` → port interne du Service
-  - `targetPort` → port sur lequel le container écoute
-  - `nodePort` → port exposé sur les nœuds pour l’accès externe
-- `type: NodePort` → Service accessible depuis l’extérieur via `<NodeIP>:<nodePort>`
-- Pour un accès uniquement interne au cluster, utiliser `type: ClusterIP`.
+Le **selector** du Service doit matcher les labels du Deployment pour cibler les bons pods. C'est le lien entre les deux objets.
+
+**Définition des ports :**
+
+| Champ | Rôle | Exemple |
+|-------|------|---------|
+| `port` | Port exposé par le Service dans le cluster | 80 |
+| `targetPort` | Port sur lequel le container écoute | 80 |
+| `nodePort` | Port exposé sur le node pour l'accès externe | 30080 |
+
+Dans cet exercice, les trois services sont en **`type: NodePort`**, ce qui les rend accessibles depuis l'extérieur via `<NodeIP>:<nodePort>` (ex. `192.168.56.110:30080` pour app1). L'alternative `type: ClusterIP` ne rend le service accessible que depuis l'intérieur du cluster.
 
 </details>
 
@@ -210,185 +242,132 @@ Avec ConfigMap :
 <summary><strong>Ingress</strong></summary>
 <br>
 
-- C'est une configuration qui décrit des règles (host et path) et vers quels services router
-- L’Ingress est la **couche d’accès HTTP externe**.
-- Il agit comme un **routeur HTTP/HTTPS** pour exposer plusieurs services à l'exterieur.
-- Il fonctionne **toujours avec un Ingress Controller** (Nginx, Traefik…) qui fait le vrai travail de proxy et de load balancing.
-- 🚨 Par default, lorsque l'on installe k3s, son ingress controller Traefik est aussi installé 
+Un Ingress est une ressource Kubernetes qui décrit des **règles HTTP** (host et path) pour router des requêtes vers des **Services**.
 
-- Chaque règle de l’Ingress correspond à un **host** et un **path**.
-- La requête entrante est transmise au **service ciblé** via son nom.
-- Les services exposent les pods à l’échelle du cluster, l’Ingress rend ces services accessibles depuis l’extérieur.
-- Dans les règles :
-  - **service.port.number** → port du service vers lequel la requête est routée
-  - **targetPort** (défini dans le Service) → port sur lequel le container écoute
-- `pathType: Prefix` → toutes les requêtes commençant par ce chemin sont envoyées au service cible.
+Un Ingress ne fonctionne pas seul : il a besoin d’un **Ingress Controller** (Traefik, Nginx, …) qui reçoit les requêtes HTTP et applique les règles. Sur k3s, **Traefik** est installé par défaut.
 
--> type d'objet = ingress
--> ingress controller recoit une requete vers un host, et un path, il regarde la rule correspondante
--> la requete est transmise au service via le name
+### Ce que l’Ingress apporte par rapport à un Service
 
-un service expose des pods à l'échelle du cluster
-l'ingress rend des services accessibles depuis l'extérieur du cluster via http/s
+Un **Service** (NodePort) expose *un* service sur *un* port du node. Sans Ingress, l’accès aux apps se fait typiquement par des ports différents :
 
--> le target port c'est le port sur lequel l'application écoute dans le pod
--> port c'est le port exposé par le service lui même
+```
+http://192.168.56.110:30080   → app1
+http://192.168.56.110:30081   → app2
+http://192.168.56.110:30082   → app3
+```
 
-ports:
-- port: 80        # ce que le client utilise
-  targetPort: 3000 # ce que le pod écoute
+Un **Ingress** permet un **point d’entrée unique** (80/443) et du **routage HTTP** (par host / path) vers plusieurs services :
 
-Client interne
-   ↓
-app1-service:80   (port)
-   ↓
-Pod:3000          (targetPort)
+```
+http://app1.com               → app1
+http://app2.com               → app2
+http://192.168.56.110         → app3 (règle “default”)
+```
 
-backend:
-  service:
-    name: app1-service
-    port:
-      number: 80
+### Schéma visuel (Service vs Ingress)
 
-Ingress → app1-service:80
+```mermaid
+flowchart LR
+  %% --- Sans Ingress ---
+  subgraph SANS["Sans Ingress (accès direct via NodePort)"]
+    c1["Client"] -->|"http://NodeIP:30080"| np1["NodePort 30080"]
+    np1 --> svc1["Service app1 :80"] --> pods1["Pods app1 (nginx écoute :80)"]
+
+    c2["Client"] -->|"http://NodeIP:30081"| np2["NodePort 30081"]
+    np2 --> svc2["Service app2 :80"] --> pods2["Pods app2 (nginx écoute :80)"]
+  end
+
+  %% --- Avec Ingress ---
+  subgraph AVEC["Avec Ingress (un seul point d'entrée HTTP, routage par Host/Path)"]
+    c3["Client"] -->|"http(s)://NodeIP:80/443"| entry["Point d'entrée unique :80/:443"]
+    entry --> ic["Ingress Controller (Traefik)"]
+    ing["Objet Ingress (règles Host/Path)"] -.-> ic
+
+    ic -->|"Host: app1.com  Path: /"| svc1b["Service app1 :80"] --> pods1b["Pods app1 (écoute :80)"]
+    ic -->|"Host: app2.com  Path: /"| svc2b["Service app2 :80"] --> pods2b["Pods app2 (écoute :80)"]
+  end
+```
+
+### Lecture rapide de `ingress/ingress.yaml`
+
+- Chaque bloc `rules` route un **host** et un **path** vers un Service :
+  - `spec.rules[].host` : nom de domaine (ex. `app1.com`)
+  - `paths[].path` + `pathType: Prefix` : toutes les requêtes qui commencent par ce chemin matchent la règle
+  - `backend.service.name` : **nom du Service** cible (ex. `app1-service`)
+  - `backend.service.port.number` : **port du Service** (ici `80`)
+
+Le Service relaie ensuite vers les pods via `targetPort` (défini dans le Service) qui correspond au port sur lequel le container écoute.
 </details>
 
 ---
 
+
 ## Les CLI utiles
 
-- la cli pour avoir le recap des objets kubernetes
-```ruby
-kubectl get all
+<details>
+<summary><strong>Commandes</strong></summary>
+<br>
+
+- Récap des **objets Kubernetes** (workloads / réseau) :
+
+```bash
+kubectl get pods,svc,ingress
 ```
 
-- la cli pour aller dans le container
-```ruby
-kubectl exec -it <pod-name> -- /bin/sh
-```
-(Si message d'erreur, c'est que la box de la vm n'est pas assez puissante)
+> Un “objet” Kubernetes = une ressource déclarée dans l’API (Pod, Service, Ingress, Deployment, ConfigMap, …).
 
-- la cli pour avoir les infos services du namespace kube-system (utile pour Traefik)
-```ruby
+- Infos **infrastructure / nœuds** (pas des objets applicatifs) :
+
+```bash
+kubectl get nodes -o wide
+```
+
+> Cette commande sert à voir l’état et les infos des nœuds (IP, rôle, version, …).  
+> Elle sert à diagnostiquer l’infra du cluster, pas à lister les objets applicatifs du namespace.
+
+- Ouvrir un shell dans un pod :
+
+```bash
+kubectl exec -it <pod-name> -- sh
+```
+
+Si besoin, préciser le namespace :
+
+```bash
+kubectl -n <namespace> exec -it <pod-name> -- sh
+```
+
+- Infos des services dans `kube-system` (utile pour Traefik) :
+
+```bash
 kubectl get svc -n kube-system
 ```
 
-<u>Les checks :</u>
+**Les checks (Ingress / Services) :**
 
-- Depuis la vm de l'exo :
-```ruby
-curl -H "Host: app3.com" http://localhost
+- Depuis la VM de l'exo (sur le node, vers Traefik en local) :
+
+```bash
+curl http://localhost
+curl -H "Host: app1.com" http://localhost
+curl -H "Host: app2.com" http://localhost
 ```
 
-- Depuis l'host (vm projet) :
-```ruby
+- Depuis la VM projet (accès externe vers le node) :
+
+```bash
+curl http://192.168.56.110
 curl -H "Host: app1.com" http://192.168.56.110
-```
-Où pour faire un check sur browser web
-```ruby
-http://192.168.56.110:30081 (le nodePort de app2)
+curl -H "Host: app2.com" http://192.168.56.110
 ```
 
-- Dans la vm
+> Sans DNS (ou sans entrée dans `/etc/hosts`), le test se fait via le header `Host` comme ci-dessus.
 
-- Avec Traefik
+- Check direct via NodePort (sans Ingress) :
 
-- Sans Traefik
-
----
-
-## Pourquoi KVM et pas VirtualBox ?
-
-En **nested virtualization** (VM mère → VM Vagrant), on a deux niveaux d'hyperviseurs. Le choix du provider change beaucoup les perfs :
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Hôte physique (nested VT-x activé)                              │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │  VM mère (ex. Ubuntu)                                      │   │
-│  │  ┌─────────────────────┐   ┌─────────────────────────────┐ │   │
-│  │  │ VirtualBox (type 2)  │   │ KVM (dans le noyau Linux)   │ │   │
-│  │  │ → 2e couche lourde  │   │ → 1 seule couche, léger     │ │   │
-│  │  │ → souvent lent      │   │ → nested KVM bien supporté  │ │   │
-│  │  └─────────────────────┘   └─────────────────────────────┘ │   │
-│  │           ❌ lent                        ✅ préféré          │   │
-│  └───────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+```text
+http://192.168.56.110:30081  (NodePort de app2)
 ```
 
-- **VirtualBox** = hyperviseur de type 2 (logiciel complet) → double couche en nested = souvent très lent.
-- **KVM** = intégré au noyau, conçu pour la virtualisation, nested KVM documenté et performant → on privilégie libvirt/KVM.
+</details>
 
----
-
-## Vagrant, libvirt, QEMU, KVM : qui fait quoi ?
-
-```
-┌───────────────────────────────────────────────┐
-│  Vagrant                                       │
-│  → Orchestrateur CLI                           │
-│  → Gère le cycle de vie de la VM               │
-│    (create, up, ssh, destroy, provision...)     │
-│                                                │
-│  ┌───────────────────────────────────────────┐ │
-│  │  vagrant-libvirt (plugin)                  │ │
-│  │  → Fait le lien entre Vagrant et libvirt   │ │
-│  │                                            │ │
-│  │  ┌───────────────────────────────────────┐ │ │
-│  │  │  libvirt                               │ │ │
-│  │  │  → API / couche d'abstraction          │ │ │
-│  │  │  → Pilote les hyperviseurs (KVM, etc.) │ │ │
-│  │  │                                        │ │ │
-│  │  │  ┌──────────────────────────────────┐  │ │ │
-│  │  │  │  QEMU + KVM                      │  │ │ │
-│  │  │  │  → QEMU = émulateur matériel     │  │ │ │
-│  │  │  │  → KVM  = module noyau Linux     │  │ │ │
-│  │  │  │    (accélération hardware)        │  │ │ │
-│  │  │  └──────────────────────────────────┘  │ │ │
-│  │  └───────────────────────────────────────┘ │ │
-│  └───────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┘
-```
-
-| Composant | Rôle | Analogie |
-|-----------|------|----------|
-| **KVM** | Module du **noyau Linux**. Il transforme Linux en hyperviseur en utilisant les instructions CPU (VT-x). C'est lui qui fait tourner la VM à quasi-vitesse native. | Le moteur |
-| **QEMU** | **Émulateur matériel**. Il simule le hardware (carte réseau, disque, écran...) pour la VM. Sans KVM, QEMU émule tout (lent). Avec KVM, QEMU délègue le CPU au noyau et ne gère que le reste. | Le châssis |
-| **libvirt** | **API / daemon** (`libvirtd`). Couche d'abstraction qui pilote QEMU/KVM via une interface unifiée. `virsh`, `virt-manager` et le plugin Vagrant l'utilisent. | Le tableau de bord |
-| **Vagrant** | **Orchestrateur CLI**. Il ne virtualise rien lui-même. Il appelle un **provider** (VirtualBox, libvirt, Docker...) pour créer/gérer les VMs. Il gère aussi le provisioning (scripts), le réseau, les synced folders, SSH, etc. | Le pilote automatique |
-
----
-
-## Setup (KVM / libvirt)
-
-Prérequis sur la machine qui lance Vagrant (Ubuntu/Debian) :
-
-```bash
-sudo apt-get update
-sudo apt-get install -y libvirt-dev libvirt-daemon-system qemu-kvm
-vagrant plugin install vagrant-libvirt
-```
-
-Optionnel : ajouter son utilisateur au groupe `libvirt` puis se reconnecter (ou `newgrp libvirt`) :
-
-```bash
-sudo usermod -aG libvirt $USER
-```
-
-Récupérer la box (une fois) puis lancer la VM :
-
-```bash
-cd p2
-vagrant box add generic/debian12 --provider libvirt   # une seule fois
-vagrant up --provider=libvirt
-```
-
-**Faut-il préciser le provider à chaque fois ?**  
-Oui, sauf si tu fixes le provider par défaut. Pour ne plus avoir à mettre `--provider=libvirt` :
-
-```bash
-export VAGRANT_DEFAULT_PROVIDER=libvirt
-vagrant up
-```
-
-Tu peux ajouter `export VAGRANT_DEFAULT_PROVIDER=libvirt` dans ton `~/.bashrc` si tu restes toujours sur libvirt pour ce projet.
