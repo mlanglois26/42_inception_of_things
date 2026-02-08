@@ -302,19 +302,38 @@ Le Service relaie ensuite vers les pods via `targetPort` (défini dans le Servic
 
 ## Les CLI utiles
 
-- la cli pour avoir le recap des objets kubernetes
-```ruby
-kubectl get all
+- Récap des **objets Kubernetes** (workloads / réseau) :
+
+```bash
+kubectl get pods,svc,ingress
 ```
 
-- la cli pour aller dans le container
-```ruby
-kubectl exec -it <pod-name> -- /bin/sh
-```
-(Si message d'erreur, c'est que la box de la vm n'est pas assez puissante)
+> Un “objet” Kubernetes = une ressource déclarée dans l’API (Pod, Service, Ingress, Deployment, ConfigMap, …).
 
-- la cli pour avoir les infos services du namespace kube-system (utile pour Traefik)
-```ruby
+- Infos **infrastructure / nœuds** (pas des objets applicatifs) :
+
+```bash
+kubectl get nodes -o wide
+```
+
+> Cette commande sert à voir l’état et les infos des nœuds (IP, rôle, version, …).  
+> Elle sert à diagnostiquer l’infra du cluster, pas à lister les objets applicatifs du namespace.
+
+- Ouvrir un shell dans un pod :
+
+```bash
+kubectl exec -it <pod-name> -- sh
+```
+
+Si besoin, préciser le namespace :
+
+```bash
+kubectl -n <namespace> exec -it <pod-name> -- sh
+```
+
+- Infos des services dans `kube-system` (utile pour Traefik) :
+
+```bash
 kubectl get svc -n kube-system
 ```
 
@@ -335,6 +354,8 @@ curl http://192.168.56.110
 curl -H "Host: app1.com" http://192.168.56.110
 curl -H "Host: app2.com" http://192.168.56.110
 ```
+
+> Sans DNS (ou sans entrée dans `/etc/hosts`), le test se fait via le header `Host` comme ci-dessus.
 
 - Check direct via NodePort (sans Ingress) :
 
