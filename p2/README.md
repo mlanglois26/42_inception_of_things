@@ -157,33 +157,8 @@ Les deux types réseau utilisent la notation **symbole** (`:private_network`, `:
 curl -sfL https://get.k3s.io | sh -
 ```
 
-- on créer le dossier /root/.kube
-- on copie y copie le contenu de /etc/rancher/k3s/k3s.yaml /root/.kube/config
-- on donne les droits de lecture/écriture à root
-
-<u>Pourquoi ?</u>
-
-Parce que kubectl cherche son fichier de config par défault dans /root/config
-MAIS k3s le créer par défault dans etc/rancher/k3s/k3s.yaml
-
-<u>Kubectl, c'est quoi ?</u>
-
-C'est l'outils de ligne de commande de kubernetes
-Pour fonctionner il a besoin de savoir :
-- ou est le cluster (IP + port)
-- comment s'authentifier (certificats)
-- quel cluster utiliser
-
-Toutes ces infos sont présentes dans le file kubeconfig.yml
-
-<u>Test</u>
-
-```ruby
-kubectl get nodes
-```
-
-C'est juste pour être sûre que la cli soit fonctionnelle avant d'utiliser les commandes qu'on veut vraiment lancer
-Car kubernetes démarre lentement et l'api server peut ne pas être prête à temps
+- Le script attend que l'API server k3s soit prête (`kubectl get nodes`) avant de lancer les déploiements, car Kubernetes démarre lentement.
+- La copie manuelle du kubeconfig vers `/root/.kube/config` n'est pas nécessaire : k3s fournit son propre `kubectl` qui utilise automatiquement `/etc/rancher/k3s/k3s.yaml`.
 </details>
 
 <details>
